@@ -1,0 +1,16 @@
+[project]
+name = "livekit-agent"
+version = "0.1.0"
+description = "LiveKit conversational voice agent"
+requires-python = ">=3.11"
+dependencies = [
+    "livekit-agents[openai,deepgram,silero,turn-detector]>=0.12,<2",
+    "python-dotenv>=1.0",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["agent"]
