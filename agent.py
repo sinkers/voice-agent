@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from openai import AsyncOpenAI
+
 from livekit.agents import (
     Agent,
     AgentSession,
@@ -21,20 +23,33 @@ logger = logging.getLogger("voice-agent")
 
 # Route LLM calls through the local OpenClaw Gateway (Alex agent) if configured,
 # otherwise fall back to direct OpenAI GPT-4o.
+#
+# Session persistence: x-openclaw-session-key forces all voice calls to route
+# to the same stable Alex session, giving the agent full memory and context
+# across separate calls. Without this, each API call would create a fresh session.
 _OPENCLAW_URL = os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789/v1")
 _OPENCLAW_TOKEN = os.getenv("OPENCLAW_GATEWAY_TOKEN")
+_OPENCLAW_SESSION_KEY = os.getenv("OPENCLAW_SESSION_KEY", "voice-agent-andrew")
 
 _USE_OPENCLAW = bool(_OPENCLAW_TOKEN)
 
 if _USE_OPENCLAW:
-    logger.info("LLM: routing via OpenClaw Gateway at %s (agent: alex)", _OPENCLAW_URL)
-    _llm = openai.LLM(
-        model="openclaw:alex",
+    logger.info(
+        "LLM: routing via OpenClaw Gateway at %s (session: %s)",
+        _OPENCLAW_URL,
+        _OPENCLAW_SESSION_KEY,
+    )
+    # Use a stable session key so Alex retains memory across voice calls.
+    # x-openclaw-session-key tells the Gateway to use (or create) a named session
+    # rather than spinning up a throwaway one per request.
+    _oc_client = AsyncOpenAI(
         base_url=_OPENCLAW_URL,
         api_key=_OPENCLAW_TOKEN,
+        default_headers={"x-openclaw-session-key": _OPENCLAW_SESSION_KEY},
     )
+    _llm = openai.LLM(client=_oc_client, model="openclaw:alex")
 else:
-    logger.info("LLM: using OpenAI GPT-4o directly")
+    logger.info("LLM: using OpenAI GPT-4o directly (no OPENCLAW_GATEWAY_TOKEN set)")
     _llm = openai.LLM(model="gpt-4o")
 
 
