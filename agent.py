@@ -38,16 +38,29 @@ else:
     _llm = openai.LLM(model="gpt-4o")
 
 
+VOICE_INSTRUCTIONS = """
+You are responding via a real-time voice call. Your responses will be spoken aloud by a
+text-to-speech engine, so format them accordingly.
+
+VOICE FORMAT RULES — follow these strictly:
+- Respond in plain spoken English only. No markdown whatsoever.
+- No asterisks, hashes, backticks, underscores, or other symbols — they will be read aloud.
+- No bullet points or numbered lists. Use natural connective language instead
+  ("first... then... finally..." or "there are a couple of options:").
+- No URLs. If you need to reference a website, describe it in words ("the LiveKit docs site").
+- No code blocks. Describe code concepts in plain English.
+- No emojis.
+- Spell out abbreviations when reading them aloud would be unclear.
+- Keep responses concise — 1 to 4 sentences is ideal. Long responses are hard to follow by ear.
+- Use natural sentence rhythm. Short, clear sentences flow better through TTS than long ones.
+- Don't start with filler phrases like "Certainly!", "Of course!", "Great question!" — just answer.
+- If you need to use a tool to answer accurately, do so — but summarise the result in plain speech.
+""".strip()
+
+
 class VoiceAssistant(Agent):
     def __init__(self) -> None:
-        super().__init__(
-            instructions=(
-                "You are responding via a real-time voice call. "
-                "Keep responses brief (1-3 sentences), conversational, and clear. "
-                "Avoid markdown, bullet lists, and long explanations — this is spoken audio. "
-                "You can use your tools if needed to answer questions accurately."
-            )
-        )
+        super().__init__(instructions=VOICE_INSTRUCTIONS)
 
 
 async def entrypoint(ctx: JobContext) -> None:
