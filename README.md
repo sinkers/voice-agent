@@ -35,6 +35,8 @@ Then edit `.env`:
 | `LIVEKIT_API_SECRET` | LiveKit Cloud → Project Settings |
 | `OPENAI_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
 | `DEEPGRAM_API_KEY` | [console.deepgram.com](https://console.deepgram.com) ($200 free credit) |
+| `OPENCLAW_GATEWAY_URL` | Usually `http://127.0.0.1:18789/v1` (default Gateway port) |
+| `OPENCLAW_GATEWAY_TOKEN` | `openclaw gateway status` → auth token, or `~/.openclaw/openclaw.json` |
 
 > ⚠️ `.env` is gitignored. Never commit real credentials — use `.env.example` for the template.
 
@@ -67,6 +69,49 @@ The agent registers with LiveKit Cloud and waits for participants.
 1. Go to [agents-playground.livekit.io](https://agents-playground.livekit.io/)
 2. Enter your LiveKit Cloud URL + API key + secret
 3. Click **Connect** — the agent joins the room and greets you
+
+---
+
+## OpenClaw Integration (Alex as the LLM)
+
+Instead of calling GPT-4o directly, the agent routes all LLM calls through the **local OpenClaw Gateway** — targeting the `alex` agent. This means every voice call goes through Alex, who has:
+
+- **Long-term memory** (`MEMORY.md`) — project context, preferences, past decisions
+- **Daily context** (`memory/YYYY-MM-DD.md`) — recent activity
+- **Persona** (`SOUL.md`) — consistent voice across text and voice channels
+- **Tools** — web search, file ops, exec, cron — Alex can take actions during a call
+- **User context** (`USER.md`) — knows who you are
+
+### How it works
+
+The LiveKit `openai.LLM` plugin supports a custom `base_url`. OpenClaw's Gateway exposes an OpenAI-compatible `/v1/chat/completions` endpoint. Zero custom plugin code needed.
+
+```
+Deepgram STT → text
+    → POST http://127.0.0.1:18789/v1/chat/completions
+      model: "openclaw:alex"
+      Authorization: Bearer <OPENCLAW_GATEWAY_TOKEN>
+    → Alex agent turn (with memory, tools, persona)
+    → response text
+→ OpenAI TTS → audio
+```
+
+### Fallback to GPT-4o
+
+If `OPENCLAW_GATEWAY_TOKEN` is not set, the agent falls back to direct GPT-4o automatically. Useful for testing without the Gateway running.
+
+### Requirements
+
+- OpenClaw Gateway must be running: `openclaw gateway status`
+- `chatCompletions` endpoint must be enabled in `~/.openclaw/openclaw.json`:
+  ```json
+  { "gateway": { "http": { "endpoints": { "chatCompletions": { "enabled": true } } } } }
+  ```
+- `OPENCLAW_GATEWAY_TOKEN` set in `.env`
+
+### Security
+
+The Gateway token is a full operator credential — treat it like a root key. Keep port 18789 on loopback or LAN only; never expose it to the public internet.
 
 ---
 

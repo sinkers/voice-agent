@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from dotenv import load_dotenv
 
@@ -18,15 +19,33 @@ from livekit.plugins import deepgram, openai, silero
 
 logger = logging.getLogger("voice-agent")
 
+# Route LLM calls through the local OpenClaw Gateway (Alex agent) if configured,
+# otherwise fall back to direct OpenAI GPT-4o.
+_OPENCLAW_URL = os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789/v1")
+_OPENCLAW_TOKEN = os.getenv("OPENCLAW_GATEWAY_TOKEN")
+
+_USE_OPENCLAW = bool(_OPENCLAW_TOKEN)
+
+if _USE_OPENCLAW:
+    logger.info("LLM: routing via OpenClaw Gateway at %s (agent: alex)", _OPENCLAW_URL)
+    _llm = openai.LLM(
+        model="openclaw:alex",
+        base_url=_OPENCLAW_URL,
+        api_key=_OPENCLAW_TOKEN,
+    )
+else:
+    logger.info("LLM: using OpenAI GPT-4o directly")
+    _llm = openai.LLM(model="gpt-4o")
+
 
 class VoiceAssistant(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=(
-                "You are a friendly and helpful AI voice assistant. "
-                "Keep your responses concise and conversational — this is a voice interface, "
-                "so avoid long lists or markdown formatting. "
-                "Be warm, clear, and natural."
+                "You are responding via a real-time voice call. "
+                "Keep responses brief (1-3 sentences), conversational, and clear. "
+                "Avoid markdown, bullet lists, and long explanations — this is spoken audio. "
+                "You can use your tools if needed to answer questions accurately."
             )
         )
 
@@ -37,7 +56,7 @@ async def entrypoint(ctx: JobContext) -> None:
     try:
         session = AgentSession(
             stt=deepgram.STT(model="nova-3"),
-            llm=openai.LLM(model="gpt-4o"),
+            llm=_llm,
             tts=openai.TTS(voice="alloy"),
             vad=ctx.proc.userdata["vad"],
         )
@@ -51,7 +70,7 @@ async def entrypoint(ctx: JobContext) -> None:
         logger.info("Agent ready in room: %s", ctx.room.name)
 
         await session.generate_reply(
-            instructions="Greet the user and let them know you're ready to help."
+            instructions="Greet the user briefly and let them know you're ready."
         )
     except Exception:
         logger.exception("Agent failed to start")
