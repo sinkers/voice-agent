@@ -9,6 +9,7 @@ load_dotenv()
 from livekit.agents import (
     Agent,
     AgentSession,
+    JobContext,
     RoomInputOptions,
     WorkerOptions,
     cli,
@@ -30,28 +31,34 @@ class VoiceAssistant(Agent):
         )
 
 
-async def entrypoint(ctx):
+async def entrypoint(ctx: JobContext) -> None:
     logger.info("Agent connecting to room: %s", ctx.room.name)
 
-    session = AgentSession(
-        stt=deepgram.STT(model="nova-3"),
-        llm=openai.LLM(model="gpt-4o"),
-        tts=openai.TTS(voice="alloy"),
-        vad=silero.VAD.load(),
-    )
+    try:
+        session = AgentSession(
+            stt=deepgram.STT(model="nova-3"),
+            llm=openai.LLM(model="gpt-4o"),
+            tts=openai.TTS(voice="alloy"),
+            vad=ctx.proc.userdata["vad"],
+        )
 
-    await session.start(
-        agent=VoiceAssistant(),
-        room=ctx.room,
-        room_input_options=RoomInputOptions(),
-    )
+        await session.start(
+            agent=VoiceAssistant(),
+            room=ctx.room,
+            room_input_options=RoomInputOptions(),
+        )
 
-    await session.generate_reply(
-        instructions="Greet the user and let them know you're ready to help."
-    )
+        logger.info("Agent ready in room: %s", ctx.room.name)
+
+        await session.generate_reply(
+            instructions="Greet the user and let them know you're ready to help."
+        )
+    except Exception:
+        logger.exception("Agent failed to start")
+        raise
 
 
-def prewarm(proc):
+def prewarm(proc) -> None:
     proc.userdata["vad"] = silero.VAD.load()
 
 

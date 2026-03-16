@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "LiveKit conversational voice agent"
 requires-python = ">=3.11"
 dependencies = [
-    "livekit-agents[openai,deepgram,silero,turn-detector]>=0.12",
+    "livekit-agents[openai,deepgram,silero,turn-detector]>=0.12,<2",
     "python-dotenv>=1.0",
 ]
 

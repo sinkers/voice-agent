@@ -270,20 +270,18 @@ Teams meeting
 
 ---
 
-### Phase 3 — Microsoft Teams (2–5 days depending on approach)
+### Phase 3 — Microsoft Teams (2–5 days)
 
-**Option A path (recommended start):**
-- [ ] Verify Teams meetings have PSTN dial-in enabled
-- [ ] Agent dials meeting number via outbound SIP
-- [ ] Test audio quality and latency
-- [ ] Build a small API endpoint to trigger agent dial-in (e.g., `/join-teams?meeting_url=...`)
+**Chosen approach: Microsoft Graph Calling Bot (Option B)**
+Always-on calling is required — the agent must receive and initiate calls at any time. SIP dial-in (Option A) is not viable as it only works for scheduled meetings with PSTN dial-in enabled.
 
-**Option B path (if native Teams presence needed):**
-- [ ] Azure Bot Framework registration
-- [ ] Graph API permissions + admin consent
-- [ ] Windows Server or Azure VM for media bot
-- [ ] Implement Teams Real-time Media Platform SDK (.NET)
-- [ ] Bridge Teams audio ↔ LiveKit agent
+- [ ] Azure AD app registration + Bot Framework channel
+- [ ] Request Graph API permissions: `Calls.Initiate.All`, `Calls.JoinGroupCall.All`, `Calls.AccessMedia.All`
+- [ ] Teams admin consent for permissions
+- [ ] Deploy .NET media bot on Azure Windows VM
+- [ ] Build audio bridge: Teams media bot ↔ LiveKit SIP endpoint
+- [ ] Test inbound call to bot (user calls bot directly in Teams)
+- [ ] Test outbound call (agent initiates call to Teams user)
 
 **Output:** Agent that can join Teams calls.
 
