@@ -75,14 +75,14 @@ The agent registers with LiveKit Cloud and waits for participants.
 
 ---
 
-## OpenClaw Integration (Alex as the LLM)
+## OpenClaw Integration
 
-Instead of calling GPT-4o directly, the agent routes all LLM calls through the **local OpenClaw Gateway** — targeting the `alex` agent. This means every voice call goes through Alex, who has:
+Instead of calling GPT-4o directly, the agent routes all LLM calls through the **local OpenClaw Gateway** — targeting your configured OpenClaw agent, which brings:
 
 - **Long-term memory** (`MEMORY.md`) — project context, preferences, past decisions
 - **Daily context** (`memory/YYYY-MM-DD.md`) — recent activity
 - **Persona** (`SOUL.md`) — consistent voice across text and voice channels
-- **Tools** — web search, file ops, exec, cron — Alex can take actions during a call
+- **Tools** — web search, file ops, exec, cron — your agent can take actions during a call
 - **User context** (`USER.md`) — knows who you are
 
 ### How it works
