@@ -50,7 +50,7 @@ The voice agent routes all LLM calls through a single OpenClaw agent. Any config
 
 To list available agents:
 ```bash
-cat ~/.openclaw/openclaw.json | python3 -c "import json,sys; [print(a['id']) for a in json.load(sys.stdin)['agents']['list']]"
+python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.openclaw/openclaw.json'))); [print(a['id']) for a in d.get('agents',{}).get('list',[])]"
 ```
 
 `OPENCLAW_AGENT_ID` in `.env` controls which agent is used. Change it anytime and restart.

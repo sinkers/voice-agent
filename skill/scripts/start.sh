@@ -48,9 +48,7 @@ fi
 # Start the agent
 echo "Starting voice agent..."
 cd "$INSTALL_PATH"
-# shellcheck disable=SC1091
-source .venv/bin/activate
-nohup python agent.py dev > "$LOG_FILE" 2>&1 &
+nohup uv run python agent.py dev > "$LOG_FILE" 2>&1 &
 PID=$!
 
 echo "$PID" > "$PID_FILE"

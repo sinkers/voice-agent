@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # setup.sh — install and configure the LiveKit voice agent
-# Usage: setup.sh [install_path]
+# Usage: setup.sh [install_path] [agent_id]
 # Default install path: ~/livekit-voice-agent
 
 set -euo pipefail
@@ -44,53 +44,58 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "Creating .env from template..."
     cp "$INSTALL_PATH/.env.example" "$ENV_FILE"
 
-    # Read OpenClaw gateway config
+    # Read OpenClaw gateway config — single python3 call for efficiency
     GATEWAY_PORT=18789
     GATEWAY_TOKEN=""
     if [ -f "$OPENCLAW_CONFIG" ] && command -v python3 &>/dev/null; then
-        GATEWAY_PORT=$(python3 -c "
+        OC_VALUES=$(python3 - "$OPENCLAW_CONFIG" <<'PYEOF'
 import json, sys
 try:
-    d = json.load(open('$OPENCLAW_CONFIG'))
-    print(d.get('gateway', {}).get('port', 18789))
-except: print(18789)
-")
-        GATEWAY_TOKEN=$(python3 -c "
-import json, sys
-try:
-    d = json.load(open('$OPENCLAW_CONFIG'))
-    print(d.get('gateway', {}).get('auth', {}).get('token', ''))
-except: print('')
-")
+    d = json.load(open(sys.argv[1]))
+    port = d.get("gateway", {}).get("port", 18789)
+    token = d.get("gateway", {}).get("auth", {}).get("token", "")
+    agents = [a.get("id","") for a in d.get("agents", {}).get("list", [])]
+    agent_list = ",".join(a for a in agents if a)
+    print(f"{port} {token} {agent_list}")
+except Exception:
+    print("18789  ")
+PYEOF
+)
+        GATEWAY_PORT=$(echo "$OC_VALUES" | awk '{print $1}')
+        GATEWAY_TOKEN=$(echo "$OC_VALUES" | awk '{print $2}')
+        AGENT_LIST=$(echo "$OC_VALUES" | awk '{print $3}')
     fi
 
     GATEWAY_URL="http://127.0.0.1:${GATEWAY_PORT}/v1"
 
     # Auto-select agent ID if not provided
-    if [ -z "$AGENT_ID" ] && [ -f "$OPENCLAW_CONFIG" ] && command -v python3 &>/dev/null; then
-        AVAILABLE_AGENTS=$(python3 -c "
-import json
-try:
-    d = json.load(open('$OPENCLAW_CONFIG'))
-    ids = [a['id'] for a in d.get('agents', {}).get('list', [])]
-    print('\n'.join(ids))
-except: print('main')
-")
+    if [ -z "$AGENT_ID" ] && [ -n "${AGENT_LIST:-}" ]; then
         echo ""
         echo "Available OpenClaw agents:"
-        echo "$AVAILABLE_AGENTS" | nl -w2 -s') '
+        echo "$AGENT_LIST" | tr ',' '\n' | nl -w2 -s') '
         echo ""
         read -rp "Which agent should handle voice calls? [main]: " CHOSEN_AGENT
         AGENT_ID="${CHOSEN_AGENT:-main}"
     fi
     AGENT_ID="${AGENT_ID:-main}"
 
-    # Replace placeholder values with real OpenClaw values
-    sed -i "s|OPENCLAW_GATEWAY_URL=.*|OPENCLAW_GATEWAY_URL=$GATEWAY_URL|" "$ENV_FILE"
-    if [ -n "$GATEWAY_TOKEN" ]; then
-        sed -i "s|OPENCLAW_GATEWAY_TOKEN=.*|OPENCLAW_GATEWAY_TOKEN=$GATEWAY_TOKEN|" "$ENV_FILE"
-    fi
-    sed -i "s|OPENCLAW_AGENT_ID=.*|OPENCLAW_AGENT_ID=$AGENT_ID|" "$ENV_FILE"
+    # Replace placeholder values — use python3 for portable in-place edit
+    python3 - "$ENV_FILE" "$GATEWAY_URL" "$GATEWAY_TOKEN" "$AGENT_ID" <<'PYEOF'
+import sys, re
+
+env_file, gateway_url, gateway_token, agent_id = sys.argv[1:]
+
+with open(env_file) as f:
+    content = f.read()
+
+content = re.sub(r"^OPENCLAW_GATEWAY_URL=.*$", f"OPENCLAW_GATEWAY_URL={gateway_url}", content, flags=re.MULTILINE)
+if gateway_token:
+    content = re.sub(r"^OPENCLAW_GATEWAY_TOKEN=.*$", f"OPENCLAW_GATEWAY_TOKEN={gateway_token}", content, flags=re.MULTILINE)
+content = re.sub(r"^OPENCLAW_AGENT_ID=.*$", f"OPENCLAW_AGENT_ID={agent_id}", content, flags=re.MULTILINE)
+
+with open(env_file, "w") as f:
+    f.write(content)
+PYEOF
 
     echo "OpenClaw config applied:"
     echo "  OPENCLAW_GATEWAY_URL=$GATEWAY_URL"
@@ -104,16 +109,11 @@ else
     echo ".env already exists — skipping auto-population (edit manually if needed)"
 fi
 
-# Download model files (done after .env creation so env vars are available)
-# agent.py creates the OpenAI client at import time, so we need API keys set.
-# Use the .env values, falling back to stubs so download-files can run without real keys.
+# Download model files
 echo "Downloading agent model files..."
 _OAI_KEY=$(grep "^OPENAI_API_KEY=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
-_OC_TOKEN=$(grep "^OPENCLAW_GATEWAY_TOKEN=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
-# If neither key is set, provide stubs so the import doesn't crash (download-files doesn't call APIs)
 OPENAI_API_KEY="${_OAI_KEY:-stub-key-for-download}" \
-OPENCLAW_GATEWAY_TOKEN="${_OC_TOKEN:-}" \
-uv run python agent.py download-files || echo "Warning: download-files failed — model files may need to be downloaded on first start"
+uv run python agent.py download-files || echo "Warning: download-files failed — will retry on first start"
 
 echo ""
 echo "=== Setup complete! ==="
@@ -121,14 +121,12 @@ echo ""
 echo "The following values still need to be filled in manually in $ENV_FILE:"
 echo ""
 echo "  LIVEKIT_URL          — wss://your-project.livekit.cloud"
-echo "                         Get from: https://cloud.livekit.io → your project → Settings"
+echo "                         Get from: https://cloud.livekit.io → project settings"
 echo "  LIVEKIT_API_KEY      — from LiveKit Cloud project settings"
 echo "  LIVEKIT_API_SECRET   — from LiveKit Cloud project settings"
 echo "  OPENAI_API_KEY       — from https://platform.openai.com/api-keys"
 echo "  DEEPGRAM_API_KEY     — from https://console.deepgram.com (\$200 free credit)"
-echo "  OPENCLAW_AGENT_ID    — which OpenClaw agent handles voice calls (auto-set during setup)"
-echo "                         To change: re-run setup.sh [path] [agent-id]"
 echo "  OPENCLAW_SESSION_KEY — (optional) pin to a session for shared memory"
 echo "                         Tip: ask your agent 'what is your session key?'"
 echo ""
-echo "Then run: scripts/start.sh $INSTALL_PATH"
+echo "Then run: bash scripts/start.sh $INSTALL_PATH"
