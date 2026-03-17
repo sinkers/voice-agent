@@ -21,38 +21,44 @@ from livekit.plugins import deepgram, openai, silero
 
 logger = logging.getLogger("voice-agent")
 
-# Route LLM calls through the local OpenClaw Gateway (Alex agent) if configured,
-# otherwise fall back to direct OpenAI GPT-4o.
+# ---------------------------------------------------------------------------
+# LLM configuration
 #
-# Session persistence: x-openclaw-session-key forces all voice calls to route
-# to the same stable Alex session, giving the agent full memory and context
-# across separate calls. Without this, each API call would create a fresh session.
+# Option A — OpenClaw Gateway (recommended):
+#   Set OPENCLAW_GATEWAY_TOKEN to route LLM calls through a local OpenClaw
+#   agent. The agent gets full memory, tools, and persona from the workspace.
+#
+# Option B — Direct OpenAI (fallback):
+#   If OPENCLAW_GATEWAY_TOKEN is not set, the agent falls back to GPT-4o.
+# ---------------------------------------------------------------------------
+
 _OPENCLAW_URL = os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789/v1")
 _OPENCLAW_TOKEN = os.getenv("OPENCLAW_GATEWAY_TOKEN")
-_OPENCLAW_SESSION_KEY = os.getenv("OPENCLAW_SESSION_KEY", "voice-agent-andrew")
+_OPENCLAW_AGENT_ID = os.getenv("OPENCLAW_AGENT_ID", "main")
+_OPENCLAW_SESSION_KEY = os.getenv("OPENCLAW_SESSION_KEY")
 
 _USE_OPENCLAW = bool(_OPENCLAW_TOKEN)
 
 if _USE_OPENCLAW:
     logger.info(
-        "LLM: routing via OpenClaw Gateway at %s (session: %s)",
-        _OPENCLAW_URL,
-        _OPENCLAW_SESSION_KEY,
+        "LLM: routing via OpenClaw Gateway → agent=%s session=%s",
+        _OPENCLAW_AGENT_ID,
+        _OPENCLAW_SESSION_KEY or "(new per request)",
     )
-    # Use a stable session key so Alex retains memory across voice calls.
-    # x-openclaw-session-key tells the Gateway to use (or create) a named session
-    # rather than spinning up a throwaway one per request.
+    _headers: dict[str, str] = {"x-openclaw-agent-id": _OPENCLAW_AGENT_ID}
+    if _OPENCLAW_SESSION_KEY:
+        # Pin all voice calls to a specific session for persistent memory.
+        # Without this, each API call creates a throwaway session.
+        _headers["x-openclaw-session-key"] = _OPENCLAW_SESSION_KEY
+
     _oc_client = AsyncOpenAI(
         base_url=_OPENCLAW_URL,
         api_key=_OPENCLAW_TOKEN,
-        default_headers={
-            "x-openclaw-agent-id": "alex",
-            "x-openclaw-session-key": _OPENCLAW_SESSION_KEY,
-        },
+        default_headers=_headers,
     )
-    _llm = openai.LLM(client=_oc_client, model="openclaw:alex")
+    _llm = openai.LLM(client=_oc_client, model=f"openclaw:{_OPENCLAW_AGENT_ID}")
 else:
-    logger.info("LLM: using OpenAI GPT-4o directly (no OPENCLAW_GATEWAY_TOKEN set)")
+    logger.info("LLM: using OpenAI GPT-4o directly (OPENCLAW_GATEWAY_TOKEN not set)")
     _llm = openai.LLM(model="gpt-4o")
 
 

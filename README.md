@@ -28,17 +28,20 @@ cp .env.example .env
 
 Then edit `.env`:
 
-| Variable | Where to get it |
-|----------|----------------|
-| `LIVEKIT_URL` | [LiveKit Cloud](https://cloud.livekit.io) → Project Settings |
-| `LIVEKIT_API_KEY` | LiveKit Cloud → Project Settings |
-| `LIVEKIT_API_SECRET` | LiveKit Cloud → Project Settings |
-| `OPENAI_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
-| `DEEPGRAM_API_KEY` | [console.deepgram.com](https://console.deepgram.com) ($200 free credit) |
-| `OPENCLAW_GATEWAY_URL` | Usually `http://127.0.0.1:18789/v1` (default Gateway port) |
-| `OPENCLAW_GATEWAY_TOKEN` | `openclaw gateway status` → auth token, or `~/.openclaw/openclaw.json` |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `LIVEKIT_URL` | ✅ | [LiveKit Cloud](https://cloud.livekit.io) → Project Settings |
+| `LIVEKIT_API_KEY` | ✅ | LiveKit Cloud → Project Settings |
+| `LIVEKIT_API_SECRET` | ✅ | LiveKit Cloud → Project Settings |
+| `OPENAI_API_KEY` | ✅ | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) — used for TTS and GPT-4o fallback |
+| `DEEPGRAM_API_KEY` | ✅ | [console.deepgram.com](https://console.deepgram.com) — $200 free credit |
+| `OPENCLAW_GATEWAY_TOKEN` | Optional | Enables LLM routing through OpenClaw. Without it, falls back to direct GPT-4o |
+| `OPENCLAW_GATEWAY_URL` | Optional | Gateway URL. Defaults to `http://127.0.0.1:18789/v1` |
+| `OPENCLAW_AGENT_ID` | Optional | Which OpenClaw agent to use. Defaults to `main` |
+| `OPENCLAW_SESSION_KEY` | Optional | Pin to a specific session for shared memory. Omit for fresh session per call |
 
 > ⚠️ `.env` is gitignored. Never commit real credentials — use `.env.example` for the template.
+> See `.env.example` for full documentation on each variable.
 
 ### 2. Install dependencies
 
@@ -88,13 +91,17 @@ The LiveKit `openai.LLM` plugin supports a custom `base_url`. OpenClaw's Gateway
 
 ```
 Deepgram STT → text
-    → POST http://127.0.0.1:18789/v1/chat/completions
-      model: "openclaw:alex"
-      Authorization: Bearer <OPENCLAW_GATEWAY_TOKEN>
-    → Alex agent turn (with memory, tools, persona)
+    → POST {OPENCLAW_GATEWAY_URL}/chat/completions
+      model: "openclaw:{OPENCLAW_AGENT_ID}"
+      Authorization: Bearer {OPENCLAW_GATEWAY_TOKEN}
+      x-openclaw-agent-id: {OPENCLAW_AGENT_ID}
+      x-openclaw-session-key: {OPENCLAW_SESSION_KEY}
+    → OpenClaw agent turn (with memory, tools, persona)
     → response text
 → OpenAI TTS → audio
 ```
+
+All agent-specific values (`OPENCLAW_AGENT_ID`, `OPENCLAW_SESSION_KEY`) are configured in `.env` — no names or IDs are hardcoded in the source.
 
 ### Fallback to GPT-4o
 
@@ -107,7 +114,24 @@ If `OPENCLAW_GATEWAY_TOKEN` is not set, the agent falls back to direct GPT-4o au
   ```json
   { "gateway": { "http": { "endpoints": { "chatCompletions": { "enabled": true } } } } }
   ```
-- `OPENCLAW_GATEWAY_TOKEN` set in `.env`
+- The following set in `.env` (see `.env.example` for full documentation):
+  - `OPENCLAW_GATEWAY_TOKEN`
+  - `OPENCLAW_AGENT_ID`
+  - `OPENCLAW_SESSION_KEY` (optional — omit for fresh session per call)
+
+### Session key
+
+The `OPENCLAW_SESSION_KEY` determines memory persistence:
+
+| Value | Behaviour |
+|-------|-----------|
+| _(omit)_ | New session per call — no memory between calls |
+| A unique key e.g. `voice-session-1` | Persistent voice-only session |
+| Your chat session key | Voice and chat share the same session and context |
+
+To find your chat session key, ask your OpenClaw agent: **"What is your session key?"**
+
+> ⚠️ Session keys must be fully scoped to the correct agent. An incorrectly scoped key will route to the wrong agent. The format is typically `agent:<agent-id>:<channel>:<id>`.
 
 ### Security
 
