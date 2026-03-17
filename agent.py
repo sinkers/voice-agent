@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 
+import jwt as _jwt
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -84,8 +86,6 @@ class VoiceAssistant(Agent):
 
 
 async def entrypoint(ctx: JobContext) -> None:
-    import time as _time
-
     logger.info("Agent connecting to room: %s", ctx.room.name)
 
     _t: dict = {}
@@ -100,17 +100,17 @@ async def entrypoint(ctx: JobContext) -> None:
 
         @session.on("user_started_speaking")
         def _on_speech_start(_evt):
-            _t["speech_start"] = _time.perf_counter()
+            _t["speech_start"] = time.perf_counter()
 
         @session.on("user_stopped_speaking")
         def _on_speech_end(_evt):
             if "speech_start" in _t:
-                _t["speech_end"] = _time.perf_counter()
+                _t["speech_end"] = time.perf_counter()
                 logger.info("[timing] speech=%.3fs", _t["speech_end"] - _t["speech_start"])
 
         @session.on("user_input_transcribed")
         def _on_transcribed(evt):
-            _t["stt_done"] = _time.perf_counter()
+            _t["stt_done"] = time.perf_counter()
             ref = _t.get("speech_end") or _t.get("speech_start")
             if ref:
                 logger.info("[timing] stt_latency=%.3fs transcript=%r",
@@ -118,7 +118,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
         @session.on("agent_started_speaking")
         def _on_agent_speak(_evt):
-            _t["tts_start"] = _time.perf_counter()
+            _t["tts_start"] = time.perf_counter()
             if "stt_done" in _t:
                 logger.info("[timing] stt_to_audio=%.3fs (LLM+TTS)",
                             _t["tts_start"] - _t["stt_done"])
@@ -127,7 +127,7 @@ async def entrypoint(ctx: JobContext) -> None:
         def _on_agent_done(_evt):
             if "tts_start" in _t:
                 logger.info("[timing] agent_speaking=%.3fs",
-                            _time.perf_counter() - _t["tts_start"])
+                            time.perf_counter() - _t["tts_start"])
 
         await session.start(
             agent=VoiceAssistant(),
@@ -149,6 +149,8 @@ def prewarm(proc) -> None:
     proc.userdata["vad"] = silero.VAD.load()
 
 
+_SECONDS_IN_A_DAY = 86400
+
 if __name__ == "__main__":
     _base_name = os.getenv("OPENCLAW_AGENT_NAME", "voice-agent")
     _instance_id = uuid.uuid4().hex[:8]
@@ -166,14 +168,13 @@ if __name__ == "__main__":
     _config_secret = os.getenv("CONFIG_SECRET", "")
     if _call_base and _config_secret:
         try:
-            import time
-            import jwt as _jwt
             _display = os.getenv("OPENCLAW_AGENT_DISPLAY_NAME", _base_name.replace("-", " ").title())
+            _now = int(time.time())
             _payload = {
                 "agent_name": _agent_name,
                 "display_name": _display,
-                "iat": int(time.time()),
-                "exp": int(time.time()) + 86400,  # 24h
+                "iat": _now,
+                "exp": _now + _SECONDS_IN_A_DAY,
             }
             _token = _jwt.encode(_payload, _config_secret, algorithm="HS256")
             print(f"[agent] Call URL (24h): {_call_base}/?token={_token}")

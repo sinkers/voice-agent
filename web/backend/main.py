@@ -1,6 +1,7 @@
 import json
 import os
 import secrets
+import uuid
 from contextlib import asynccontextmanager
 
 import jwt
@@ -13,6 +14,11 @@ from livekit.api import AccessToken, CreateAgentDispatchRequest, LiveKitAPI, Vid
 from pydantic import BaseModel
 
 load_dotenv()
+
+_REQUIRED_ENV = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"]
+_missing = [v for v in _REQUIRED_ENV if not os.environ.get(v)]
+if _missing:
+    raise RuntimeError(f"Missing required environment variables: {', '.join(_missing)}")
 
 LIVEKIT_URL = os.environ["LIVEKIT_URL"]
 LIVEKIT_API_KEY = os.environ["LIVEKIT_API_KEY"]
@@ -107,7 +113,6 @@ async def connect_with_token(req: ConnectRequest):
     lk_key = payload.get("livekit_api_key") or LIVEKIT_API_KEY
     lk_secret = payload.get("livekit_api_secret") or LIVEKIT_API_SECRET
 
-    import uuid
     room_name = f"room-{uuid.uuid4().hex[:12]}"
     identity = f"user-{uuid.uuid4().hex[:8]}"
 

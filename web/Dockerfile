@@ -12,7 +12,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY backend/pyproject.toml .
-RUN pip install --no-cache-dir fastapi "uvicorn[standard]" livekit-api python-dotenv aiofiles "PyJWT>=2.0"
+RUN pip install --no-cache-dir .
 
 COPY backend/main.py .
 COPY --from=frontend /frontend/dist ./static

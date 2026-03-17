@@ -31,11 +31,13 @@ def _read_instance_id(agent_name: str) -> str:
     """Read the running instance ID for a given agent base name."""
     _id_file = os.path.join(os.path.dirname(__file__), f".agent-instance-id-{agent_name}")
     if os.path.exists(_id_file):
-        return open(_id_file).read().strip()
+        with open(_id_file) as f:
+            return f.read().strip()
     # Fallback: legacy single-file
     _legacy = os.path.join(os.path.dirname(__file__), ".agent-instance-id")
     if os.path.exists(_legacy):
-        return open(_legacy).read().strip()
+        with open(_legacy) as f:
+            return f.read().strip()
     return ""
 
 
