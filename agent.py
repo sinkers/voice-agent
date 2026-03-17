@@ -21,45 +21,40 @@ from livekit.plugins import deepgram, openai, silero
 
 logger = logging.getLogger("voice-agent")
 
-# ---------------------------------------------------------------------------
-# LLM configuration
-#
-# Option A — OpenClaw Gateway (recommended):
-#   Set OPENCLAW_GATEWAY_TOKEN to route LLM calls through a local OpenClaw
-#   agent. The agent gets full memory, tools, and persona from the workspace.
-#
-# Option B — Direct OpenAI (fallback):
-#   If OPENCLAW_GATEWAY_TOKEN is not set, the agent falls back to GPT-4o.
-# ---------------------------------------------------------------------------
+def _create_llm() -> openai.LLM:
+    """Create the LLM client.
 
-_OPENCLAW_URL = os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789/v1")
-_OPENCLAW_TOKEN = os.getenv("OPENCLAW_GATEWAY_TOKEN")
-_OPENCLAW_AGENT_ID = os.getenv("OPENCLAW_AGENT_ID", "main")
-_OPENCLAW_SESSION_KEY = os.getenv("OPENCLAW_SESSION_KEY")
+    Routes via the OpenClaw Gateway if OPENCLAW_GATEWAY_TOKEN is set,
+    giving the agent access to memory, tools, and a configured persona.
+    Falls back to direct GPT-4o if the token is not present.
+    """
+    token = os.getenv("OPENCLAW_GATEWAY_TOKEN")
+    if not token:
+        logger.info("LLM: using OpenAI GPT-4o directly (OPENCLAW_GATEWAY_TOKEN not set)")
+        return openai.LLM(model="gpt-4o")
 
-_USE_OPENCLAW = bool(_OPENCLAW_TOKEN)
+    url = os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789/v1")
+    agent_id = os.getenv("OPENCLAW_AGENT_ID", "main")
+    session_key = os.getenv("OPENCLAW_SESSION_KEY")
 
-if _USE_OPENCLAW:
     logger.info(
-        "LLM: routing via OpenClaw Gateway → agent=%s session=%s",
-        _OPENCLAW_AGENT_ID,
-        _OPENCLAW_SESSION_KEY or "(new per request)",
+        "LLM: routing via OpenClaw Gateway → url=%s agent=%s session=%s",
+        url,
+        agent_id,
+        session_key or "(new per request)",
     )
-    _headers: dict[str, str] = {"x-openclaw-agent-id": _OPENCLAW_AGENT_ID}
-    if _OPENCLAW_SESSION_KEY:
+
+    headers: dict[str, str] = {"x-openclaw-agent-id": agent_id}
+    if session_key:
         # Pin all voice calls to a specific session for persistent memory.
         # Without this, each API call creates a throwaway session.
-        _headers["x-openclaw-session-key"] = _OPENCLAW_SESSION_KEY
+        headers["x-openclaw-session-key"] = session_key
 
-    _oc_client = AsyncOpenAI(
-        base_url=_OPENCLAW_URL,
-        api_key=_OPENCLAW_TOKEN,
-        default_headers=_headers,
-    )
-    _llm = openai.LLM(client=_oc_client, model=f"openclaw:{_OPENCLAW_AGENT_ID}")
-else:
-    logger.info("LLM: using OpenAI GPT-4o directly (OPENCLAW_GATEWAY_TOKEN not set)")
-    _llm = openai.LLM(model="gpt-4o")
+    client = AsyncOpenAI(base_url=url, api_key=token, default_headers=headers)
+    return openai.LLM(client=client, model=f"openclaw:{agent_id}")
+
+
+_llm = _create_llm()
 
 
 VOICE_INSTRUCTIONS = """
