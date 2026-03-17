@@ -28,15 +28,20 @@ cp .env.example .env
 
 Then edit `.env`:
 
-| Variable | Where to get it |
-|----------|----------------|
-| `LIVEKIT_URL` | [LiveKit Cloud](https://cloud.livekit.io) → Project Settings |
-| `LIVEKIT_API_KEY` | LiveKit Cloud → Project Settings |
-| `LIVEKIT_API_SECRET` | LiveKit Cloud → Project Settings |
-| `OPENAI_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
-| `DEEPGRAM_API_KEY` | [console.deepgram.com](https://console.deepgram.com) ($200 free credit) |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `LIVEKIT_URL` | ✅ | [LiveKit Cloud](https://cloud.livekit.io) → Project Settings |
+| `LIVEKIT_API_KEY` | ✅ | LiveKit Cloud → Project Settings |
+| `LIVEKIT_API_SECRET` | ✅ | LiveKit Cloud → Project Settings |
+| `OPENAI_API_KEY` | ✅ | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) — used for TTS and GPT-4o fallback |
+| `DEEPGRAM_API_KEY` | ✅ | [console.deepgram.com](https://console.deepgram.com) — $200 free credit |
+| `OPENCLAW_GATEWAY_TOKEN` | Optional | Enables LLM routing through OpenClaw. Without it, falls back to direct GPT-4o |
+| `OPENCLAW_GATEWAY_URL` | Optional | Gateway URL. Defaults to `http://127.0.0.1:18789/v1` |
+| `OPENCLAW_AGENT_ID` | Optional | Which OpenClaw agent to use. Defaults to `main` |
+| `OPENCLAW_SESSION_KEY` | Optional | Pin to a specific session for shared memory. Omit for fresh session per call |
 
 > ⚠️ `.env` is gitignored. Never commit real credentials — use `.env.example` for the template.
+> See `.env.example` for full documentation on each variable.
 
 ### 2. Install dependencies
 
@@ -67,6 +72,70 @@ The agent registers with LiveKit Cloud and waits for participants.
 1. Go to [agents-playground.livekit.io](https://agents-playground.livekit.io/)
 2. Enter your LiveKit Cloud URL + API key + secret
 3. Click **Connect** — the agent joins the room and greets you
+
+---
+
+## OpenClaw Integration (Alex as the LLM)
+
+Instead of calling GPT-4o directly, the agent routes all LLM calls through the **local OpenClaw Gateway** — targeting the `alex` agent. This means every voice call goes through Alex, who has:
+
+- **Long-term memory** (`MEMORY.md`) — project context, preferences, past decisions
+- **Daily context** (`memory/YYYY-MM-DD.md`) — recent activity
+- **Persona** (`SOUL.md`) — consistent voice across text and voice channels
+- **Tools** — web search, file ops, exec, cron — Alex can take actions during a call
+- **User context** (`USER.md`) — knows who you are
+
+### How it works
+
+The LiveKit `openai.LLM` plugin supports a custom `base_url`. OpenClaw's Gateway exposes an OpenAI-compatible `/v1/chat/completions` endpoint. Zero custom plugin code needed.
+
+```
+Deepgram STT → text
+    → POST {OPENCLAW_GATEWAY_URL}/chat/completions
+      model: "openclaw:{OPENCLAW_AGENT_ID}"
+      Authorization: Bearer {OPENCLAW_GATEWAY_TOKEN}
+      x-openclaw-agent-id: {OPENCLAW_AGENT_ID}
+      x-openclaw-session-key: {OPENCLAW_SESSION_KEY}
+    → OpenClaw agent turn (with memory, tools, persona)
+    → response text
+→ OpenAI TTS → audio
+```
+
+All agent-specific values (`OPENCLAW_AGENT_ID`, `OPENCLAW_SESSION_KEY`) are configured in `.env` — no names or IDs are hardcoded in the source.
+
+### Fallback to GPT-4o
+
+If `OPENCLAW_GATEWAY_TOKEN` is not set, the agent falls back to direct GPT-4o automatically. Useful for testing without the Gateway running.
+
+### Requirements
+
+- OpenClaw Gateway must be running: `openclaw gateway status`
+- `chatCompletions` endpoint must be enabled in `~/.openclaw/openclaw.json`:
+  ```json
+  { "gateway": { "http": { "endpoints": { "chatCompletions": { "enabled": true } } } } }
+  ```
+- The following set in `.env` (see `.env.example` for full documentation):
+  - `OPENCLAW_GATEWAY_TOKEN`
+  - `OPENCLAW_AGENT_ID`
+  - `OPENCLAW_SESSION_KEY` (optional — omit for fresh session per call)
+
+### Session key
+
+The `OPENCLAW_SESSION_KEY` determines memory persistence:
+
+| Value | Behaviour |
+|-------|-----------|
+| _(omit)_ | New session per call — no memory between calls |
+| A unique key e.g. `voice-session-1` | Persistent voice-only session |
+| Your chat session key | Voice and chat share the same session and context |
+
+To find your chat session key, ask your OpenClaw agent: **"What is your session key?"**
+
+> ⚠️ Session keys must be fully scoped to the correct agent. An incorrectly scoped key will route to the wrong agent. The format is typically `agent:<agent-id>:<channel>:<id>`.
+
+### Security
+
+The Gateway token is a full operator credential — treat it like a root key. Keep port 18789 on loopback or LAN only; never expose it to the public internet.
 
 ---
 
