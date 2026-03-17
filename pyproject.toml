@@ -14,3 +14,16 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 py-modules = ["agent"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: requires live gateway",
+]
