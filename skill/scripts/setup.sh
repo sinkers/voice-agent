@@ -6,7 +6,7 @@
 set -euo pipefail
 
 INSTALL_PATH="${1:-$HOME/livekit-voice-agent}"
-AGENT_ID="${2:-}"   # optional: pass agent id as second arg, e.g. "main" or "alex"
+AGENT_ID="${2:-}"   # optional: pass agent id as second arg, e.g. "main" or "assistant"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ASSETS_DIR="$SKILL_DIR/assets/agent"
 OPENCLAW_CONFIG="$HOME/.openclaw/openclaw.json"

@@ -41,7 +41,7 @@ Setup will:
 To skip the agent selection prompt, pass the agent ID directly:
 
 ```bash
-bash scripts/setup.sh ~/livekit-voice-agent alex
+bash scripts/setup.sh ~/livekit-voice-agent your-agent-id
 ```
 
 ## Choosing an Agent

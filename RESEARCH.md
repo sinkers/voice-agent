@@ -11,7 +11,7 @@ Build a conversational voice AI agent using LiveKit that can:
 2. Accept/make phone calls via SIP
 3. Join Microsoft Teams calls
 
-The agent's brain is **Alex** — the OpenClaw agent already running on this Pi — rather than a raw GPT-4o call. Voice is the transport layer; Alex handles all intelligence, memory, and tool use.
+The agent's brain is your chosen OpenClaw agent rather than a raw GPT-4o call. Voice is the transport layer; the OpenClaw agent handles intelligence, memory, and tool use.
 
 ---
 
@@ -31,23 +31,23 @@ The agent's brain is **Alex** — the OpenClaw agent already running on this Pi 
 
 ---
 
-## LLM: OpenClaw Gateway (Alex) instead of raw GPT-4o
+## LLM: OpenClaw Gateway instead of raw GPT-4o
 
 ### The key insight
 
 OpenClaw's Gateway already exposes an **OpenAI-compatible `/v1/chat/completions` endpoint**.
 LiveKit's `openai.LLM` plugin supports a custom `base_url` override.
 
-Result: **zero custom plugin code**. Point the LLM at the local Gateway, target the `alex` agent, and every voice call goes through me — with full memory, tools, and persona intact.
+Result: **zero custom plugin code**. Point the LLM at the local Gateway, target a configured agent, and every voice call goes through me — with full memory, tools, and persona intact.
 
-### What Alex brings to a voice call
+### What your OpenClaw agent brings to a voice call
 
 | Capability | Detail |
 |-----------|--------|
 | **Long-term memory** | `MEMORY.md` — project context, preferences, past decisions |
 | **Daily context** | `memory/YYYY-MM-DD.md` — recent session activity |
 | **Persona** | `SOUL.md` — consistent personality across voice and text |
-| **Tools** | Web search, file ops, exec, cron — Alex can *do things* during a call |
+| **Tools** | Web search, file ops, exec, cron — your agent can *do things* during a call |
 | **User context** | `USER.md` — knows who Andrew is, timezone, preferences |
 
 ### Architecture
@@ -61,7 +61,7 @@ User mic → LiveKit Cloud (WebRTC/SIP)
                 ↓ text
           OpenClaw Gateway :18789/v1/chat/completions
                 ↓ agent turn
-          Alex (OpenClaw) — memory + tools + persona
+          OpenClaw agent — memory + tools + persona
                 ↓ text response
           OpenAI TTS (alloy voice)
                 ↓ audio
@@ -75,7 +75,7 @@ User mic → LiveKit Cloud (WebRTC/SIP)
 import os
 
 openai.LLM(
-    model="openclaw:alex",
+    model="openclaw:{OPENCLAW_AGENT_ID}",
     base_url=os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789/v1"),
     api_key=os.getenv("OPENCLAW_GATEWAY_TOKEN"),
 )
@@ -84,7 +84,7 @@ openai.LLM(
 Gateway details:
 - **Endpoint:** `http://127.0.0.1:18789/v1/chat/completions`
 - **Auth:** Bearer token (from `OPENCLAW_GATEWAY_TOKEN`)
-- **Agent targeting:** `model: "openclaw:alex"` routes to the Alex agent
+- **Agent targeting:** `model: "openclaw:{OPENCLAW_AGENT_ID}"` routes to the configured agent
 - **Streaming:** SSE supported — compatible with LiveKit's openai plugin
 
 ### Session persistence
@@ -93,14 +93,14 @@ The gateway derives a stable session key from the OpenAI `user` field. Options:
 
 | Strategy | `user` value | Result |
 |----------|-------------|--------|
-| **Per-caller session** (recommended) | `"voice-andrew"` | Alex remembers voice call history across calls — dedicated voice session separate from Telegram |
+| **Per-caller session** (recommended) | `"voice-andrew"` | Agent remembers voice call history across calls — dedicated voice session separate from Telegram |
 | **Stateless** | (omit) | New session per call, no cross-call memory |
 
-With `user: "voice-andrew"`, Alex will remember context between voice sessions (different from the Telegram session but same knowledge base from MEMORY.md).
+With a stable user value, the agent will remember context between voice sessions (different from the Telegram session but same knowledge base from MEMORY.md).
 
 ### System prompt strategy
 
-Alex already has a full persona from SOUL.md. The `instructions` in the LiveKit agent should add **voice-mode constraints only** — not redefine the persona:
+Your OpenClaw agent already has a configured persona. The `instructions` in the LiveKit agent should add **voice-mode constraints only** — not redefine the persona:
 
 ```python
 instructions=(
@@ -111,7 +111,7 @@ instructions=(
 )
 ```
 
-This is additive — it layers on top of Alex's existing context.
+This is additive — it layers on top of the agent's existing context.
 
 ### Security note
 
@@ -127,7 +127,7 @@ The Gateway token is a full operator credential — treat it like a root key. Ke
 ### AI Model Pipeline
 
 - **STT:** Deepgram Nova-3
-- **LLM:** OpenClaw Gateway → Alex agent
+- **LLM:** OpenClaw Gateway → configured agent
 - **TTS:** OpenAI TTS (alloy voice)
 - **VAD:** Silero (prewarmed)
 
@@ -156,7 +156,7 @@ Phone network
       ↕ (internal)
   LiveKit room (caller joins as SIP participant)
       ↕ same pipeline above
-  Agent (Deepgram → OpenClaw/Alex → OpenAI TTS)
+  Agent (Deepgram → OpenClaw agent → OpenAI TTS)
 ```
 
 SIP callers appear as regular LiveKit participants — the agent code doesn't change.
@@ -195,7 +195,7 @@ Teams user calls the bot (or bot initiates call)
         ↕ SIP bridge (reuses Stage 2 infra)
   LiveKit room
         ↕
-  Agent (Deepgram → OpenClaw/Alex → OpenAI TTS)
+  Agent (Deepgram → OpenClaw agent → OpenAI TTS)
 ```
 
 ### What's required
@@ -226,14 +226,14 @@ Teams user calls the bot (or bot initiates call)
 - [x] Python env (uv), agent.py scaffolded
 - [x] Deepgram STT + OpenAI TTS + Silero VAD
 - [x] Tested via LiveKit Agents Playground
-- [ ] **Swap LLM to OpenClaw Gateway (Alex)** ← current task
+- [ ] **Swap LLM to OpenClaw Gateway** ← current task
 
 ### Phase 2 — SIP / Phone Calls (next)
 - [ ] Telnyx account + AU number
 - [ ] Configure Telnyx SIP trunk → LiveKit SIP endpoint
 - [ ] Inbound trunk + dispatch rule in LiveKit Cloud
 - [ ] Outbound trunk
-- [ ] Test: inbound call → Alex answers
+- [ ] Test: inbound call → agent answers
 - [ ] Test: agent dials out
 
 ### Phase 3 — Microsoft Teams
