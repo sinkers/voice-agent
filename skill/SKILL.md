@@ -16,10 +16,10 @@ Manages a LiveKit-based conversational voice agent that routes calls through any
 
 | Task | Command |
 |------|---------|
-| First-time setup | `bash scripts/setup.sh [install_path] [agent_id]` |
-| Start agent | `bash scripts/start.sh [install_path]` |
-| Stop agent | `bash scripts/stop.sh [install_path]` |
-| Check status | `bash scripts/status.sh [install_path]` |
+| First-time setup | `python3 scripts/setup.py [install_path] [agent_id]` |
+| Start agent | `python3 scripts/start.py [install_path]` |
+| Stop agent | `python3 scripts/stop.py [install_path]` |
+| Check status | `python3 scripts/status.py [install_path]` |
 
 Default install path: `~/livekit-voice-agent`
 
@@ -28,7 +28,7 @@ Default install path: `~/livekit-voice-agent`
 Run setup.sh — it installs dependencies and auto-populates OpenClaw config:
 
 ```bash
-bash scripts/setup.sh ~/livekit-voice-agent
+python3 scripts/setup.py ~/livekit-voice-agent
 ```
 
 Setup will:
@@ -41,7 +41,7 @@ Setup will:
 To skip the agent selection prompt, pass the agent ID directly:
 
 ```bash
-bash scripts/setup.sh ~/livekit-voice-agent your-agent-id
+python3 scripts/setup.py ~/livekit-voice-agent your-agent-id
 ```
 
 ## Choosing an Agent
@@ -79,13 +79,13 @@ Optional:
 
 ```bash
 # Start
-bash scripts/start.sh ~/livekit-voice-agent
+python3 scripts/start.py ~/livekit-voice-agent
 
 # Stop
-bash scripts/stop.sh ~/livekit-voice-agent
+python3 scripts/stop.py ~/livekit-voice-agent
 
 # Status + recent logs
-bash scripts/status.sh ~/livekit-voice-agent
+python3 scripts/status.py ~/livekit-voice-agent
 ```
 
 Logs are written to `<install_path>/agent.log`.
