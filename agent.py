@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 
 from dotenv import load_dotenv
 
@@ -83,7 +84,11 @@ class VoiceAssistant(Agent):
 
 
 async def entrypoint(ctx: JobContext) -> None:
+    import time as _time
+
     logger.info("Agent connecting to room: %s", ctx.room.name)
+
+    _t: dict = {}
 
     try:
         session = AgentSession(
@@ -93,6 +98,37 @@ async def entrypoint(ctx: JobContext) -> None:
             vad=ctx.proc.userdata["vad"],
         )
 
+        @session.on("user_started_speaking")
+        def _on_speech_start(_evt):
+            _t["speech_start"] = _time.perf_counter()
+
+        @session.on("user_stopped_speaking")
+        def _on_speech_end(_evt):
+            if "speech_start" in _t:
+                _t["speech_end"] = _time.perf_counter()
+                logger.info("[timing] speech=%.3fs", _t["speech_end"] - _t["speech_start"])
+
+        @session.on("user_input_transcribed")
+        def _on_transcribed(evt):
+            _t["stt_done"] = _time.perf_counter()
+            ref = _t.get("speech_end") or _t.get("speech_start")
+            if ref:
+                logger.info("[timing] stt_latency=%.3fs transcript=%r",
+                            _t["stt_done"] - ref, getattr(evt, "transcript", ""))
+
+        @session.on("agent_started_speaking")
+        def _on_agent_speak(_evt):
+            _t["tts_start"] = _time.perf_counter()
+            if "stt_done" in _t:
+                logger.info("[timing] stt_to_audio=%.3fs (LLM+TTS)",
+                            _t["tts_start"] - _t["stt_done"])
+
+        @session.on("agent_stopped_speaking")
+        def _on_agent_done(_evt):
+            if "tts_start" in _t:
+                logger.info("[timing] agent_speaking=%.3fs",
+                            _time.perf_counter() - _t["tts_start"])
+
         await session.start(
             agent=VoiceAssistant(),
             room=ctx.room,
@@ -101,9 +137,9 @@ async def entrypoint(ctx: JobContext) -> None:
 
         logger.info("Agent ready in room: %s", ctx.room.name)
 
-        await session.generate_reply(
-            instructions="Greet the user briefly and let them know you're ready."
-        )
+        _greeting = os.getenv("AGENT_GREETING", "")
+        if _greeting:
+            await session.say(_greeting)
     except Exception:
         logger.exception("Agent failed to start")
         raise
@@ -114,9 +150,43 @@ def prewarm(proc) -> None:
 
 
 if __name__ == "__main__":
+    _base_name = os.getenv("OPENCLAW_AGENT_NAME", "voice-agent")
+    _instance_id = uuid.uuid4().hex[:8]
+    _agent_name = f"{_base_name}-{_instance_id}"
+
+    # Write instance ID to a per-agent file so generate_call_url.py can pick it up
+    _id_file = os.path.join(os.path.dirname(__file__), f".agent-instance-id-{_base_name}")
+    with open(_id_file, "w") as f:
+        f.write(_instance_id)
+
+    print(f"[agent] Starting as: {_agent_name} (instance: {_instance_id})")
+
+    # Print call URL at startup if configured
+    _call_base = os.getenv("CALL_BASE_URL", "")
+    _config_secret = os.getenv("CONFIG_SECRET", "")
+    if _call_base and _config_secret:
+        try:
+            import time
+            import jwt as _jwt
+            _display = os.getenv("OPENCLAW_AGENT_DISPLAY_NAME", _base_name.replace("-", " ").title())
+            _payload = {
+                "agent_name": _agent_name,
+                "display_name": _display,
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 86400,  # 24h
+            }
+            _token = _jwt.encode(_payload, _config_secret, algorithm="HS256")
+            print(f"[agent] Call URL (24h): {_call_base}/?token={_token}")
+        except Exception as e:
+            print(f"[agent] Could not generate call URL: {e}")
+
+    _port = int(os.getenv("AGENT_HTTP_PORT", "8081"))
+
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
+            agent_name=_agent_name,
+            port=_port,
         )
     )
