@@ -45,7 +45,10 @@ if _USE_OPENCLAW:
     _oc_client = AsyncOpenAI(
         base_url=_OPENCLAW_URL,
         api_key=_OPENCLAW_TOKEN,
-        default_headers={"x-openclaw-session-key": _OPENCLAW_SESSION_KEY},
+        default_headers={
+            "x-openclaw-agent-id": "alex",
+            "x-openclaw-session-key": _OPENCLAW_SESSION_KEY,
+        },
     )
     _llm = openai.LLM(client=_oc_client, model="openclaw:alex")
 else:
