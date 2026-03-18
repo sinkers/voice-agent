@@ -9,6 +9,24 @@ description: >
 
 # LiveKit Voice Web — Fly.io Deployment Skill
 
+## Installing this skill
+
+Unzip the `.skill` package into your OpenClaw skills directory, then start a new session:
+
+```bash
+# Download
+curl -L https://github.com/sinkers/voice-agent/raw/master/web-skill/livekit-voice-web.skill \
+  -o livekit-voice-web.skill
+
+# Install (per-agent workspace)
+unzip livekit-voice-web.skill -d ~/.openclaw/workspace-<agent-id>/skills/
+
+# Install (shared across all agents)
+unzip livekit-voice-web.skill -d ~/.openclaw/skills/
+```
+
+See [web-skill/README.md](README.md) for full install options.
+
 Deploys the voice agent web app (React frontend + FastAPI backend) to Fly.io and sets up signed JWT call URLs so any OpenClaw instance can generate a click-to-call link.
 
 ## Quick Reference
