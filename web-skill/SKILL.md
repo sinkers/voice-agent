@@ -112,7 +112,14 @@ The setup script will check for these and guide you through anything missing:
 ## Setup (First Time)
 
 ```bash
-python3 scripts/setup.py
+# From the repo root:
+python3 web-skill/scripts/setup.py
+
+# Or from the skill install directory (pass --repo so the script can find your repo):
+python3 scripts/setup.py --repo ~/Documents/livekit-agent
+
+# Or set an env var instead of --repo:
+TALK_TO_CLAW_REPO=~/Documents/livekit-agent python3 scripts/setup.py
 ```
 
 The setup script will:
