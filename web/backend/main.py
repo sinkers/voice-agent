@@ -16,9 +16,17 @@ from pydantic import BaseModel
 load_dotenv()
 
 _REQUIRED_ENV = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"]
-_missing = [v for v in _REQUIRED_ENV if not os.environ.get(v)]
-if _missing:
-    raise RuntimeError(f"Missing required environment variables: {', '.join(_missing)}")
+
+
+def _check_required_env(env: dict[str, str] | None = None) -> None:
+    """Raise RuntimeError if any required environment variables are missing."""
+    source = env if env is not None else os.environ
+    missing = [v for v in _REQUIRED_ENV if not source.get(v)]
+    if missing:
+        raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
+
+
+_check_required_env()
 
 LIVEKIT_URL = os.environ["LIVEKIT_URL"]
 LIVEKIT_API_KEY = os.environ["LIVEKIT_API_KEY"]
