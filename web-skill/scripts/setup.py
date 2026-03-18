@@ -31,7 +31,7 @@ from pathlib import Path
 from utils import (
     BOLD, GREEN, YELLOW, RESET,
     h, ok, warn, err, prompt,
-    fly, fly_authenticated, fly_app_exists, install_flyctl,
+    fly, fly_bin, fly_authenticated, fly_app_exists, install_flyctl,
     read_app_name, read_env_file, write_env_value,
     tmp_dir,
 )
@@ -108,8 +108,9 @@ def main(update_secrets_only: bool = False) -> None:
         print("  Install from: https://nodejs.org/")
         sys.exit(1)
 
-    if shutil.which("fly") or shutil.which("flyctl"):
-        print(ok("flyctl found"))
+    _flyctl = fly_bin()
+    if Path(_flyctl).exists() or shutil.which(_flyctl):
+        print(ok(f"flyctl found ({_flyctl})"))
     else:
         if not install_flyctl():
             sys.exit(1)
