@@ -38,6 +38,55 @@ Deploys the voice agent web app (React frontend + FastAPI backend) to Fly.io and
 | Generate a call URL | `python3 web-skill/scripts/call_url.py --agent <name> --name "<display>"` |
 | Check deployment status | `python3 web-skill/scripts/status.py` |
 
+## Before You Start
+
+### Required accounts and credentials
+
+You need the following before running setup. If you already have an account, just grab the credentials — setup will prompt for each one.
+
+| Service | What it's used for | Sign up | Free tier? |
+|---------|-------------------|---------|-----------|
+| **LiveKit Cloud** | WebRTC infrastructure, room management | https://cloud.livekit.io | ✅ Yes |
+| **Deepgram** | Speech-to-text (STT) | https://console.deepgram.com | ✅ Yes ($200 credit) |
+| **OpenAI** | LLM (GPT-4o) + TTS (alloy voice) | https://platform.openai.com | ❌ Pay per use |
+| **Fly.io** | Hosts the web frontend + backend | https://fly.io/app/sign-up | ✅ Yes |
+
+### Credentials the setup script will ask for
+
+```
+LIVEKIT_URL          wss://your-project.livekit.cloud
+                     → LiveKit Cloud → Project Settings → URL
+
+LIVEKIT_API_KEY      APIxxxxxxxxxxxxxxxxx
+                     → LiveKit Cloud → Project Settings → API Keys → Create key
+
+LIVEKIT_API_SECRET   (shown once at key creation — copy immediately)
+                     → LiveKit Cloud → Project Settings → API Keys → Create key
+```
+
+The following are set in your agent's `.env` separately (not prompted by this script):
+
+```
+DEEPGRAM_API_KEY     → console.deepgram.com → API Keys → Create key
+OPENAI_API_KEY       → platform.openai.com/api-keys → Create new secret key
+```
+
+The script will **auto-generate** `CONFIG_SECRET` and write it to `.env` and Fly secrets — you don't need to create this yourself.
+
+### If you already have everything set up
+
+You only need to provide:
+- Your Fly.io app name (default: `voice-agent-web`)
+- LiveKit URL, API key, and secret
+- Confirmation to reuse the existing `CONFIG_SECRET` from `.env` (or generate a new one)
+
+Run with `--update-secrets` to rotate credentials without redeploying:
+```bash
+python3 web-skill/scripts/setup.py --update-secrets
+```
+
+---
+
 ## What Gets Deployed
 
 A single Fly.io app with:
