@@ -11,8 +11,8 @@ RUN VITE_API_URL="" npm run build
 FROM python:3.11-slim
 WORKDIR /app
 
-COPY backend/pyproject.toml .
-RUN pip install --no-cache-dir .
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/main.py .
 COPY --from=frontend /frontend/dist ./static

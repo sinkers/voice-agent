@@ -17,11 +17,13 @@ from livekit.agents import (
     Agent,
     AgentSession,
     JobContext,
-    RoomInputOptions,
     WorkerOptions,
     cli,
 )
+from livekit.agents.voice.room_io.types import RoomOptions
 from livekit.plugins import deepgram, openai, silero
+
+_SECONDS_IN_A_DAY = 86400
 
 logger = logging.getLogger("voice-agent")
 
@@ -131,13 +133,20 @@ async def entrypoint(ctx: JobContext) -> None:
                 logger.info("[timing] agent_speaking=%.3fs",
                             time.perf_counter() - _t["tts_start"])
 
+        @session.on("input_speech_started")
+        def _dbg_input(_evt):
+            logger.info("[debug] input_speech_started fired")
+
         await session.start(
             agent=VoiceAssistant(),
             room=ctx.room,
-            room_input_options=RoomInputOptions(),
+            room_options=RoomOptions(),
         )
 
         logger.info("Agent ready in room: %s", ctx.room.name)
+        logger.info("[debug] session.input.audio=%r", session.input.audio)
+        logger.info("[debug] room participants: %r",
+                    list(ctx.room.remote_participants.keys()))
 
         _greeting = os.getenv("AGENT_GREETING", "")
         if _greeting:
@@ -178,7 +187,7 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
     deadline = time.time() + expires_in
     while time.time() < deadline:
         time.sleep(3)
-        with httpx.Client() as client:
+        with httpx.Client(timeout=30.0) as client:
             resp = client.get(f"{hub_url}/auth/device/token", params={"code": device_code})
             resp.raise_for_status()
             result = resp.json()
@@ -204,7 +213,7 @@ def _hub_get_config(hub_url: str, token: str, base_name: str) -> dict:
     """Fetch agent config from hub. Returns config dict.
     Raises ValueError if token is invalid (caller should re-auth)."""
     _here = os.path.dirname(os.path.abspath(__file__))
-    with httpx.Client() as client:
+    with httpx.Client(timeout=30.0) as client:
         resp = client.get(
             f"{hub_url}/agent/config",
             headers={"Authorization": f"Bearer {token}"},
@@ -222,7 +231,7 @@ def _hub_get_config(hub_url: str, token: str, base_name: str) -> dict:
 def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, config: dict, base_name: str) -> str:
     """Register agent with hub, persist agent_id, return call_url_base."""
     _here = os.path.dirname(os.path.abspath(__file__))
-    with httpx.Client() as client:
+    with httpx.Client(timeout=30.0) as client:
         resp = client.post(
             f"{hub_url}/agent/register",
             headers={"Authorization": f"Bearer {token}"},
@@ -252,7 +261,7 @@ def _start_heartbeat(hub_url: str, token: str) -> None:
         while True:
             time.sleep(30)
             try:
-                with httpx.Client() as client:
+                with httpx.Client(timeout=30.0) as client:
                     client.post(
                         f"{hub_url}/agent/heartbeat",
                         headers={"Authorization": f"Bearer {token}"},

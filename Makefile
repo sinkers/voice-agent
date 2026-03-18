@@ -28,3 +28,8 @@ install-test-deps:
 # Basic syntax check
 lint:
 	uv run python -m py_compile agent.py && echo "agent.py OK"
+
+# Smoke test — requires hub deployed + agent worker running
+# Reads credentials from .hub-token-voice-agent and .hub-agent-id-voice-agent
+smoke-test:
+	uv run python tests/smoke_test.py

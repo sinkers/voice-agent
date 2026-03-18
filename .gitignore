@@ -17,3 +17,5 @@ build/
 web/frontend/node_modules/
 web/frontend/dist/
 .agent-instance-id*
+.hub-token-*
+.hub-agent-id-*
