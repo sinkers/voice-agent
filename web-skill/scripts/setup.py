@@ -299,7 +299,7 @@ def main(update_secrets_only: bool = False, repo_root: Path | None = None) -> No
     agent_script = repo_root / "agent.py"
     if not agent_script.exists():
         print(warn(f"agent.py not found at {agent_script} — skipping worker start."))
-        print(warn("Start it manually: python agent.py start"))
+        print(warn("Check that the repo path is correct and agent.py exists."))
         call_url = None
     else:
         _WORKER_REGISTER_TIMEOUT = 30
