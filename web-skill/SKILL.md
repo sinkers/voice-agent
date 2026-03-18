@@ -14,9 +14,12 @@ description: >
 Unzip the `.skill` package into your OpenClaw skills directory, then start a new session:
 
 ```bash
-# Download
-curl -L https://github.com/sinkers/voice-agent/raw/master/web-skill/livekit-voice-web.skill \
+# Download (pin to a specific commit — replace with a release tag when available)
+curl -L "https://github.com/sinkers/voice-agent/raw/4e0d29549a6ff9a5635d6a8309c08616d69d8ca1/web-skill/livekit-voice-web.skill" \
   -o livekit-voice-web.skill
+
+# Inspect before installing (recommended)
+unzip -l livekit-voice-web.skill
 
 # Install (per-agent workspace)
 unzip livekit-voice-web.skill -d ~/.openclaw/workspace-<agent-id>/skills/

@@ -9,11 +9,14 @@ OpenClaw loads skills from `<workspace>/skills/` or `~/.openclaw/skills/`. There
 ### Option A — Manual install (recommended for now)
 
 ```bash
-# 1. Download the skill package
-curl -L https://github.com/sinkers/voice-agent/raw/master/web-skill/livekit-voice-web.skill \
-  -o livekit-voice-web.skill
+# 1. Download the skill package (pin to a specific commit or release tag)
+SKILL_URL="https://github.com/sinkers/voice-agent/raw/4e0d29549a6ff9a5635d6a8309c08616d69d8ca1/web-skill/livekit-voice-web.skill"
+curl -L "$SKILL_URL" -o livekit-voice-web.skill
 
-# 2. Unzip into your OpenClaw skills directory
+# 2. Inspect the package contents before installing (optional but recommended)
+unzip -l livekit-voice-web.skill
+
+# 3. Unzip into your OpenClaw skills directory
 #    Per-agent (only your agent sees it):
 mkdir -p ~/.openclaw/workspace-<your-agent>/skills
 unzip livekit-voice-web.skill -d ~/.openclaw/workspace-<your-agent>/skills/
@@ -22,8 +25,10 @@ unzip livekit-voice-web.skill -d ~/.openclaw/workspace-<your-agent>/skills/
 mkdir -p ~/.openclaw/skills
 unzip livekit-voice-web.skill -d ~/.openclaw/skills/
 
-# 3. Start a new OpenClaw session — the skill loads automatically
+# 4. Start a new OpenClaw session — the skill loads automatically
 ```
+
+> **Tip:** Replace the commit SHA with a [release tag](https://github.com/sinkers/voice-agent/releases) once one is available (e.g. `v1.0.0` instead of the SHA).
 
 Replace `<your-agent>` with your agent ID (e.g. `alex`, `main`).
 
