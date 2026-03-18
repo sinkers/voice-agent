@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT / "web" / "backend"))
 os.environ.setdefault("LIVEKIT_URL", "wss://test.livekit.local")
 os.environ.setdefault("LIVEKIT_API_KEY", "test-api-key")
 os.environ.setdefault("LIVEKIT_API_SECRET", "test-api-secret")
-os.environ.setdefault("CONFIG_SECRET", "test-config-secret-abc-32bytes-padding")
+os.environ.setdefault("CONFIG_SECRET", "test-config-secret-exactly-32bytes!")
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -42,7 +42,7 @@ def livekit_env(monkeypatch):
     monkeypatch.setenv("LIVEKIT_URL", "wss://test.livekit.local")
     monkeypatch.setenv("LIVEKIT_API_KEY", "test-api-key")
     monkeypatch.setenv("LIVEKIT_API_SECRET", "test-api-secret")
-    monkeypatch.setenv("CONFIG_SECRET", "test-config-secret-abc-32bytes-padding")
+    monkeypatch.setenv("CONFIG_SECRET", "test-config-secret-exactly-32bytes!")
 
 
 @pytest.fixture

@@ -19,7 +19,7 @@ test-fe:
 test-all:
 	@echo "==> All tests (including integration)"
 	uv run pytest -v
-	cd web/frontend && npm run test
+	$(MAKE) test-fe
 
 # Install Python test dependencies (fastapi + httpx) so test_backend.py runs
 install-test-deps:

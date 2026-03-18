@@ -38,7 +38,7 @@ from httpx import AsyncClient, ASGITransport
 import main as _main_module
 from main import app
 
-CONFIG_SECRET = "test-config-secret-abc-32bytes-padding"
+CONFIG_SECRET = "test-config-secret-exactly-32bytes!"
 
 
 # ---------------------------------------------------------------------------

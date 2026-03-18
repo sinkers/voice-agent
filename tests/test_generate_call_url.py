@@ -78,9 +78,6 @@ class TestGenerateUrl:
     def test_agent_name_gets_instance_id_suffix(self, monkeypatch):
         """When OPENCLAW_INSTANCE_ID is set the agent_name gains the suffix."""
         monkeypatch.setenv("OPENCLAW_INSTANCE_ID", "abc12345")
-        monkeypatch.delenv("OPENCLAW_INSTANCE_ID", raising=False)
-        # Use instance ID via env var directly
-        monkeypatch.setenv("OPENCLAW_INSTANCE_ID", "abc12345")
         url = _generate(agent_name="voice-agent")
         token = _extract_token(url)
         payload = jwt.decode(token, SECRET, algorithms=["HS256"])

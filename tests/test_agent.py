@@ -85,7 +85,7 @@ class TestCreateLlm:
         with patch("livekit.plugins.openai.LLM", side_effect=fake_llm):
             _reload_agent(monkeypatch)
 
-        assert captured.get("model") == "gpt-4o" or True  # passes even if patching is skipped
+        assert captured.get("model") == "gpt-4o", f"Expected gpt-4o, got: {captured.get('model')}"
 
     def test_llm_is_not_none(self, monkeypatch):
         """_create_llm() always returns a non-None object."""
