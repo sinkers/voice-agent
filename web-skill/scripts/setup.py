@@ -178,6 +178,7 @@ def main(update_secrets_only: bool = False) -> None:
     print(h("Signing secret (CONFIG_SECRET)"))
 
     existing_secret = existing_env.get("CONFIG_SECRET", "")
+    shared_secret = ""
     if existing_secret and not update_secrets_only:
         print(ok("Reusing existing CONFIG_SECRET from .env"))
         config_secret = existing_secret
@@ -187,12 +188,9 @@ def main(update_secrets_only: bool = False) -> None:
             print("  If another machine deployed this app, enter its CONFIG_SECRET to share the backend.")
             print("  Leave blank to generate a new one (existing URLs on other machines will break).")
             shared_secret = prompt("CONFIG_SECRET (leave blank to generate new)", "").strip()
-            if shared_secret:
-                config_secret = shared_secret
-                print(ok("Using provided CONFIG_SECRET"))
-            else:
-                config_secret = secrets.token_hex(32)
-                print(ok(f"Generated new CONFIG_SECRET: {config_secret[:8]}..."))
+        if shared_secret:
+            config_secret = shared_secret
+            print(ok("Using provided CONFIG_SECRET"))
         else:
             config_secret = secrets.token_hex(32)
             print(ok(f"Generated new CONFIG_SECRET: {config_secret[:8]}..."))
