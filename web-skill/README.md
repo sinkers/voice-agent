@@ -1,6 +1,6 @@
-# livekit-voice-web skill
+# Talk to Claw
 
-OpenClaw skill for deploying and managing the LiveKit voice agent web app on Fly.io.
+OpenClaw skill that deploys a voice calling web app so anyone can talk to an OpenClaw agent by clicking a link.
 
 ## Installing the skill
 
@@ -10,20 +10,20 @@ OpenClaw loads skills from `<workspace>/skills/` or `~/.openclaw/skills/`. There
 
 ```bash
 # 1. Download the skill package (pin to a specific commit or release tag)
-SKILL_URL="https://github.com/sinkers/voice-agent/raw/4e0d29549a6ff9a5635d6a8309c08616d69d8ca1/web-skill/livekit-voice-web.skill"
-curl -L "$SKILL_URL" -o livekit-voice-web.skill
+SKILL_URL="https://github.com/sinkers/voice-agent/raw/8c3a2b55766f3b51402e92f382cbe1dae0c1634a/web-skill/talk-to-claw.skill"
+curl -L "$SKILL_URL" -o talk-to-claw.skill
 
 # 2. Inspect the package contents before installing (optional but recommended)
-unzip -l livekit-voice-web.skill
+unzip -l talk-to-claw.skill
 
 # 3. Unzip into your OpenClaw skills directory
 #    Per-agent (only your agent sees it):
 mkdir -p ~/.openclaw/workspace-<your-agent>/skills
-unzip livekit-voice-web.skill -d ~/.openclaw/workspace-<your-agent>/skills/
+unzip talk-to-claw.skill -d ~/.openclaw/workspace-<your-agent>/skills/
 
 #    Or shared across all agents on this machine:
 mkdir -p ~/.openclaw/skills
-unzip livekit-voice-web.skill -d ~/.openclaw/skills/
+unzip talk-to-claw.skill -d ~/.openclaw/skills/
 
 # 4. Start a new OpenClaw session — the skill loads automatically
 ```

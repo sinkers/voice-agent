@@ -1,13 +1,15 @@
 ---
-name: livekit-voice-web
+name: talk-to-claw
 description: >
-  Deploy and manage the LiveKit voice agent web app on Fly.io. Use when the user wants to
-  deploy the voice agent web interface, set up a public call URL, configure multi-agent
-  support, or manage an existing deployment. Triggers on phrases like "deploy voice web app",
-  "set up voice web", "voice agent web", "call URL", "fly deploy voice", "web app setup".
+  Deploy a voice calling web app so anyone can talk to an OpenClaw agent by clicking a link.
+  Sets up a Fly.io-hosted frontend + backend, generates signed call URLs, and manages
+  multi-agent voice workers. Use when the user wants to set up voice calling, deploy the
+  voice web app, generate a call link, or let someone talk to their OpenClaw agent by voice.
+  Triggers on phrases like "talk to claw", "voice calling", "call link", "deploy voice app",
+  "set up voice", "voice web app", "call URL", "let someone call my agent".
 ---
 
-# LiveKit Voice Web — Fly.io Deployment Skill
+# Talk to Claw — Voice Calling for OpenClaw
 
 ## Installing this skill
 
@@ -15,17 +17,17 @@ Unzip the `.skill` package into your OpenClaw skills directory, then start a new
 
 ```bash
 # Download (pin to a specific commit — replace with a release tag when available)
-curl -L "https://github.com/sinkers/voice-agent/raw/4e0d29549a6ff9a5635d6a8309c08616d69d8ca1/web-skill/livekit-voice-web.skill" \
-  -o livekit-voice-web.skill
+curl -L "https://github.com/sinkers/voice-agent/raw/8c3a2b55766f3b51402e92f382cbe1dae0c1634a/web-skill/talk-to-claw.skill" \
+  -o talk-to-claw.skill
 
 # Inspect before installing (recommended)
-unzip -l livekit-voice-web.skill
+unzip -l talk-to-claw.skill
 
 # Install (per-agent workspace)
-unzip livekit-voice-web.skill -d ~/.openclaw/workspace-<agent-id>/skills/
+unzip talk-to-claw.skill -d ~/.openclaw/workspace-<agent-id>/skills/
 
 # Install (shared across all agents)
-unzip livekit-voice-web.skill -d ~/.openclaw/skills/
+unzip talk-to-claw.skill -d ~/.openclaw/skills/
 ```
 
 See [web-skill/README.md](README.md) for full install options.
