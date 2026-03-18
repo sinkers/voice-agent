@@ -110,7 +110,7 @@ CONFIG_SECRET=                  # auto-generated
 CALL_BASE_URL=                  # set after deploy
 ```
 
-Copy `.env.example` to `.env` and fill in the values above:
+Copy `.env.example` to `.env` and replace the placeholder values with the credentials you gathered above:
 ```bash
 cp .env.example .env
 ```
