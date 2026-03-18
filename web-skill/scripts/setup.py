@@ -19,11 +19,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import secrets
 import shutil
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 from utils import (
@@ -250,29 +252,72 @@ def main(update_secrets_only: bool = False) -> None:
     fly("deploy", "--remote-only", "--app", app_name, cwd=web_dir)
 
     # ------------------------------------------------------------------
-    # 12. Done
+    # 12. Start the agent worker
     # ------------------------------------------------------------------
+    print(h("Starting agent worker"))
+
+    agent_script = repo_root / "agent.py"
+    if not agent_script.exists():
+        print(warn(f"agent.py not found at {agent_script} — skipping worker start."))
+        print(warn("Start it manually: python agent.py start"))
+        call_url = None
+    else:
+        _WORKER_REGISTER_TIMEOUT = 30
+        log_file = tmp_dir() / f"agent-{os.getenv('OPENCLAW_AGENT_NAME', 'voice-agent')}.log"
+        agent_env = os.environ.copy()
+        proc = subprocess.Popen(
+            [sys.executable, str(agent_script), "start"],
+            stdout=open(log_file, "w"),
+            stderr=subprocess.STDOUT,
+            cwd=repo_root,
+            env=agent_env,
+        )
+        print(ok(f"Agent worker started (PID {proc.pid}), logging to {log_file}"))
+        print("  Waiting for worker to register with LiveKit Cloud...")
+
+        # Poll log for 'registered worker' or URL line (up to _WORKER_REGISTER_TIMEOUT seconds)
+        call_url = None
+        for _ in range(_WORKER_REGISTER_TIMEOUT):
+            time.sleep(1)
+            try:
+                log_text = log_file.read_text()
+            except OSError:
+                continue
+            if "registered worker" in log_text or "[agent] Call URL" in log_text:
+                for line in log_text.splitlines():
+                    if "[agent] Call URL" in line:
+                        call_url = line.split("Call URL (24h): ", 1)[-1].strip()
+                break
+        else:
+            print(warn(f"Worker didn't register within {_WORKER_REGISTER_TIMEOUT}s — check the log:"))
+            print(f"  tail -f {log_file}")
+
+        if call_url:
+            print(ok("Worker registered successfully"))
+
+    # ------------------------------------------------------------------
+    # 13. Done
+    # ------------------------------------------------------------------
+    call_url_section = (
+        f"\n    {BOLD}Your call URL (valid 24h):{RESET}\n\n    {call_url}\n"
+        if call_url
+        else f"\n    {warn('Generate a call URL once the worker is running:')}\n\n"
+             f"    python3 web-skill/scripts/call_url.py --agent voice-agent --name \"Your Name\"\n"
+    )
+
     print(textwrap.dedent(f"""
     {BOLD}{GREEN}
     ╔══════════════════════════════════════════════════╗
-    ║   Deployment complete!                           ║
+    ║   Setup complete!                                ║
     ╚══════════════════════════════════════════════════╝{RESET}
 
     {ok(f'Web app: {BOLD}{call_base_url}{RESET}')}
+    {call_url_section}
+    To generate a new call URL at any time:
 
-    {BOLD}Next steps:{RESET}
+      python3 web-skill/scripts/call_url.py --agent voice-agent --name "Your Name"
 
-    1. Start your agent worker:
-
-         python agent.py start
-
-    2. Generate a call URL:
-
-         python3 web-skill/scripts/call_url.py --agent voice-agent --name "Your Name"
-
-    3. Open the URL in a browser and make a call.
-
-    {warn('The agent worker must be running for calls to connect.')}
+    {warn('Keep the agent worker running — calls will not connect without it.')}
     """))
 
 
