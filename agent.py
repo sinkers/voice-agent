@@ -153,13 +153,18 @@ _SECONDS_IN_A_DAY = 86400
 
 if __name__ == "__main__":
     _base_name = os.getenv("OPENCLAW_AGENT_NAME", "voice-agent")
-    _instance_id = uuid.uuid4().hex[:8]
-    _agent_name = f"{_base_name}-{_instance_id}"
-
-    # Write instance ID to a per-agent file so generate_call_url.py can pick it up
+    # Use a persistent instance ID so call URLs stay valid across restarts.
+    # Only generate a new UUID if no ID file exists yet (first run).
     _id_file = os.path.join(os.path.dirname(__file__), f".agent-instance-id-{_base_name}")
-    with open(_id_file, "w") as f:
-        f.write(_instance_id)
+    if os.path.exists(_id_file):
+        with open(_id_file) as f:
+            _instance_id = f.read().strip()
+    else:
+        _instance_id = uuid.uuid4().hex[:8]
+        with open(_id_file, "w") as f:
+            f.write(_instance_id)
+
+    _agent_name = f"{_base_name}-{_instance_id}"
 
     print(f"[agent] Starting as: {_agent_name} (instance: {_instance_id})")
 
