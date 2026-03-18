@@ -15,10 +15,10 @@ Deploys the voice agent web app (React frontend + FastAPI backend) to Fly.io and
 
 | Task | Command |
 |------|---------|
-| First-time deploy | `python3 scripts/setup.py` |
-| Redeploy (after code changes) | `python3 scripts/deploy.py` |
-| Generate a call URL | `python3 scripts/call_url.py --agent <name> --name "<display>"` |
-| Check deployment status | `python3 scripts/status.py` |
+| First-time deploy | `python3 web-skill/scripts/setup.py` |
+| Redeploy (after code changes) | `python3 web-skill/scripts/deploy.py` |
+| Generate a call URL | `python3 web-skill/scripts/call_url.py --agent <name> --name "<display>"` |
+| Check deployment status | `python3 web-skill/scripts/status.py` |
 
 ## What Gets Deployed
 
@@ -56,12 +56,11 @@ The setup script will:
 
 ## Generating Call URLs
 
-After setup, generate signed URLs for each agent:
+After setup, generate signed URLs for each agent (run from the repo root):
 
 ```bash
-# From the livekit-agent directory (reads .env automatically)
-python3 generate_call_url.py --agent voice-agent --name "Alex"
-python3 generate_call_url.py --agent main --name "Clive"
+python3 web-skill/scripts/call_url.py --agent voice-agent --name "Alex"
+python3 web-skill/scripts/call_url.py --agent main --name "Clive"
 ```
 
 URLs are valid for 24 hours by default. Pass `--ttl 3600` for 1 hour.
@@ -111,6 +110,6 @@ This rebuilds and redeploys without re-prompting for credentials.
 
 **Call URL gives 401** — `CONFIG_SECRET` mismatch between `.env` and Fly secret. Re-run `python3 scripts/setup.py --update-secrets`.
 
-**Agent not responding** — check the worker is running: `grep '\[agent\]' /tmp/agent-*.log`. Worker name in the JWT must match the registered LiveKit worker.
+**Agent not responding** — check the worker is running: `grep '[agent]' /tmp/agent-*.log`. Worker name in the JWT must match the registered LiveKit worker.
 
 **"Waiting for agent to join" never resolves** — the agent worker isn't registered with LiveKit. Restart with `python agent.py start` and check the log for `registered worker`.
