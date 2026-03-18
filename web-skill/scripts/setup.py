@@ -150,8 +150,11 @@ def main(update_secrets_only: bool = False) -> None:
     app_name = prompt("Fly app name", default_app)
     call_base_url = f"https://{app_name}.fly.dev"
 
-    if fly_app_exists(app_name):
+    _app_exists = fly_app_exists(app_name)
+    if _app_exists:
         print(ok(f"App '{app_name}' already exists — will redeploy"))
+        print(warn("If another OpenClaw instance deployed this app, use the same CONFIG_SECRET"))
+        print("  so URLs generated on any machine work against the same backend.")
     else:
         print(f"  Will create new app: {BOLD}{app_name}{RESET}")
 
@@ -175,12 +178,22 @@ def main(update_secrets_only: bool = False) -> None:
     print(h("Signing secret (CONFIG_SECRET)"))
 
     existing_secret = existing_env.get("CONFIG_SECRET", "")
+    shared_secret = ""
     if existing_secret and not update_secrets_only:
         print(ok("Reusing existing CONFIG_SECRET from .env"))
         config_secret = existing_secret
     else:
-        config_secret = secrets.token_hex(32)
-        print(ok(f"Generated new CONFIG_SECRET: {config_secret[:8]}..."))
+        if _app_exists:
+            print(warn("App already exists on Fly.io."))
+            print("  If another machine deployed this app, enter its CONFIG_SECRET to share the backend.")
+            print("  Leave blank to generate a new one (existing URLs on other machines will break).")
+            shared_secret = prompt("CONFIG_SECRET (leave blank to generate new)", "").strip()
+        if shared_secret:
+            config_secret = shared_secret
+            print(ok("Using provided CONFIG_SECRET"))
+        else:
+            config_secret = secrets.token_hex(32)
+            print(ok(f"Generated new CONFIG_SECRET: {config_secret[:8]}..."))
 
     # ------------------------------------------------------------------
     # 6. CORS origins
