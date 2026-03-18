@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 import uuid
 
-import jwt as _jwt
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -87,6 +88,7 @@ class VoiceAssistant(Agent):
 
 async def entrypoint(ctx: JobContext) -> None:
     logger.info("Agent connecting to room: %s", ctx.room.name)
+    await ctx.connect()
 
     _t: dict = {}
 
@@ -149,13 +151,126 @@ def prewarm(proc) -> None:
     proc.userdata["vad"] = silero.VAD.load()
 
 
-_SECONDS_IN_A_DAY = 86400
+def _hub_authenticate(hub_url: str, base_name: str) -> str:
+    """Return a valid hub token, prompting device auth if needed."""
+    _here = os.path.dirname(os.path.abspath(__file__))
+    token_file = os.path.join(_here, f".hub-token-{base_name}")
+
+    if os.path.exists(token_file):
+        with open(token_file) as f:
+            token = f.read().strip()
+        if token:
+            return token
+
+    # Device-code flow
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.post(f"{hub_url}/auth/device")
+        resp.raise_for_status()
+        data = resp.json()
+
+    device_code = data["device_code"]
+    verification_url = data["verification_url"]
+    expires_in = data.get("expires_in", 300)
+
+    print(f"[agent] Sign in to Talk to Claw: {verification_url}")
+    print("[agent] Waiting for sign-in approval...")
+
+    deadline = time.time() + expires_in
+    while time.time() < deadline:
+        time.sleep(3)
+        with httpx.Client() as client:
+            resp = client.get(f"{hub_url}/auth/device/token", params={"code": device_code})
+            resp.raise_for_status()
+            result = resp.json()
+
+        if "token" in result:
+            token = result["token"]
+            _here = os.path.dirname(os.path.abspath(__file__))
+            with open(os.path.join(_here, f".hub-token-{base_name}"), "w") as f:
+                f.write(token)
+            return token
+
+        status = result.get("status", "")
+        if status == "expired":
+            print("[agent] Sign-in approval expired. Please restart the agent.")
+            raise SystemExit(1)
+        # status == "pending" — keep polling
+
+    print("[agent] Timed out waiting for sign-in approval.")
+    raise SystemExit(1)
+
+
+def _hub_get_config(hub_url: str, token: str, base_name: str) -> dict:
+    """Fetch agent config from hub. Returns config dict.
+    Raises ValueError if token is invalid (caller should re-auth)."""
+    _here = os.path.dirname(os.path.abspath(__file__))
+    with httpx.Client() as client:
+        resp = client.get(
+            f"{hub_url}/agent/config",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    if resp.status_code == 401:
+        # Token expired — delete it so next call triggers re-auth
+        token_file = os.path.join(_here, f".hub-token-{base_name}")
+        if os.path.exists(token_file):
+            os.remove(token_file)
+        raise ValueError("hub token invalid or expired")
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, config: dict, base_name: str) -> str:
+    """Register agent with hub, persist agent_id, return call_url_base."""
+    _here = os.path.dirname(os.path.abspath(__file__))
+    with httpx.Client() as client:
+        resp = client.post(
+            f"{hub_url}/agent/register",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "agent_name": agent_name,
+                "display_name": display_name,
+                "livekit_url": config.get("livekit_url", ""),
+                "livekit_api_key": config.get("livekit_api_key", ""),
+                "livekit_api_secret": config.get("livekit_api_secret", ""),
+                "deepgram_api_key": config.get("deepgram_api_key", ""),
+                "openai_api_key": config.get("openai_api_key", ""),
+            },
+        )
+    resp.raise_for_status()
+    data = resp.json()
+
+    agent_id_file = os.path.join(_here, f".hub-agent-id-{base_name}")
+    with open(agent_id_file, "w") as f:
+        f.write(data["agent_id"])
+
+    return data["call_url_base"]
+
+
+def _start_heartbeat(hub_url: str, token: str) -> None:
+    """Start a daemon thread that sends heartbeats every 30 seconds."""
+    def _loop():
+        while True:
+            time.sleep(30)
+            try:
+                with httpx.Client() as client:
+                    client.post(
+                        f"{hub_url}/agent/heartbeat",
+                        headers={"Authorization": f"Bearer {token}"},
+                        timeout=10,
+                    )
+            except Exception as exc:
+                logger.warning("Heartbeat failed: %s", exc)
+
+    t = threading.Thread(target=_loop, daemon=True)
+    t.start()
+
 
 if __name__ == "__main__":
     _base_name = os.getenv("OPENCLAW_AGENT_NAME", "voice-agent")
-    # Use a persistent instance ID so call URLs stay valid across restarts.
-    # Only generate a new UUID if no ID file exists yet (first run).
-    _id_file = os.path.join(os.path.dirname(__file__), f".agent-instance-id-{_base_name}")
+    _here = os.path.dirname(os.path.abspath(__file__))
+
+    # Persist instance ID across restarts
+    _id_file = os.path.join(_here, f".agent-instance-id-{_base_name}")
     if os.path.exists(_id_file):
         with open(_id_file) as f:
             _instance_id = f.read().strip()
@@ -165,26 +280,39 @@ if __name__ == "__main__":
             f.write(_instance_id)
 
     _agent_name = f"{_base_name}-{_instance_id}"
+    _display_name = os.getenv("OPENCLAW_AGENT_DISPLAY_NAME", _base_name.replace("-", " ").title())
 
     print(f"[agent] Starting as: {_agent_name} (instance: {_instance_id})")
 
-    # Print call URL at startup if configured
-    _call_base = os.getenv("CALL_BASE_URL", "")
-    _config_secret = os.getenv("CONFIG_SECRET", "")
-    if _call_base and _config_secret:
-        try:
-            _display = os.getenv("OPENCLAW_AGENT_DISPLAY_NAME", _base_name.replace("-", " ").title())
-            _now = int(time.time())
-            _payload = {
-                "agent_name": _agent_name,
-                "display_name": _display,
-                "iat": _now,
-                "exp": _now + _SECONDS_IN_A_DAY,
-            }
-            _token = _jwt.encode(_payload, _config_secret, algorithm="HS256")
-            print(f"[agent] Call URL (24h): {_call_base}/?token={_token}")
-        except Exception as e:
-            print(f"[agent] Could not generate call URL: {e}")
+    # Hub authentication and configuration
+    _hub_url = os.getenv("HUB_URL", "https://voice-agent-hub.fly.dev")
+
+    _hub_token = _hub_authenticate(_hub_url, _base_name)
+
+    try:
+        _config = _hub_get_config(_hub_url, _hub_token, _base_name)
+    except ValueError:
+        # Token was invalid; re-authenticate once
+        _hub_token = _hub_authenticate(_hub_url, _base_name)
+        _config = _hub_get_config(_hub_url, _hub_token, _base_name)
+
+    # Hub keys are authoritative — override any .env values
+    _key_map = {
+        "livekit_url": "LIVEKIT_URL",
+        "livekit_api_key": "LIVEKIT_API_KEY",
+        "livekit_api_secret": "LIVEKIT_API_SECRET",
+        "deepgram_api_key": "DEEPGRAM_API_KEY",
+        "openai_api_key": "OPENAI_API_KEY",
+    }
+    for _cfg_key, _env_key in _key_map.items():
+        _val = _config.get(_cfg_key, "")
+        if _val:
+            os.environ[_env_key] = _val
+
+    _call_url_base = _hub_register(_hub_url, _hub_token, _agent_name, _display_name, _config, _base_name)
+    print(f"[agent] Call URL: {_call_url_base}")
+
+    _start_heartbeat(_hub_url, _hub_token)
 
     _port = int(os.getenv("AGENT_HTTP_PORT", "8081"))
 
