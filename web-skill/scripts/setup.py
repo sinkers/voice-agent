@@ -262,7 +262,8 @@ def main(update_secrets_only: bool = False) -> None:
         print(warn("Start it manually: python agent.py start"))
         call_url = None
     else:
-        log_file = Path("/tmp") / f"agent-{os.getenv('OPENCLAW_AGENT_NAME', 'voice-agent')}.log"
+        _WORKER_REGISTER_TIMEOUT = 30
+        log_file = tmp_dir() / f"agent-{os.getenv('OPENCLAW_AGENT_NAME', 'voice-agent')}.log"
         agent_env = os.environ.copy()
         proc = subprocess.Popen(
             [sys.executable, str(agent_script), "start"],
@@ -274,9 +275,9 @@ def main(update_secrets_only: bool = False) -> None:
         print(ok(f"Agent worker started (PID {proc.pid}), logging to {log_file}"))
         print("  Waiting for worker to register with LiveKit Cloud...")
 
-        # Poll log for 'registered worker' or URL line (up to 30s)
+        # Poll log for 'registered worker' or URL line (up to _WORKER_REGISTER_TIMEOUT seconds)
         call_url = None
-        for _ in range(30):
+        for _ in range(_WORKER_REGISTER_TIMEOUT):
             time.sleep(1)
             try:
                 log_text = log_file.read_text()
@@ -288,7 +289,7 @@ def main(update_secrets_only: bool = False) -> None:
                         call_url = line.split("Call URL (24h): ", 1)[-1].strip()
                 break
         else:
-            print(warn("Worker didn't register within 30s — check the log:"))
+            print(warn(f"Worker didn't register within {_WORKER_REGISTER_TIMEOUT}s — check the log:"))
             print(f"  tail -f {log_file}")
 
         if call_url:
