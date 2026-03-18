@@ -76,9 +76,35 @@ def _set_fly_secrets(
 # Main
 # ---------------------------------------------------------------------------
 
-def main(update_secrets_only: bool = False) -> None:
-    script_dir = Path(__file__).parent
-    repo_root = script_dir.parent.parent
+def main(update_secrets_only: bool = False, repo_root: Path | None = None) -> None:
+    if repo_root is None:
+        # Default: resolve from env var, then fall back to script location heuristic
+        env_repo = os.getenv("TALK_TO_CLAW_REPO")
+        if env_repo:
+            repo_root = Path(env_repo).expanduser().resolve()
+        else:
+            script_dir = Path(__file__).parent
+            # When run from repo: scripts/ -> web-skill/ -> repo root
+            # When run from skill install: scripts/ -> talk-to-claw/ -> skills/ (wrong)
+            # Check both and pick the one that has agent.py
+            candidate = script_dir.parent.parent
+            if (candidate / "agent.py").exists():
+                repo_root = candidate
+            else:
+                # Prompt user for repo path
+                repo_input = prompt(
+                    "Path to your voice-agent repo (e.g. ~/Documents/livekit-agent)",
+                    "",
+                ).strip()
+                if not repo_input:
+                    print(err("Repo path is required. Set TALK_TO_CLAW_REPO env var or pass --repo."))
+                    sys.exit(1)
+                repo_root = Path(repo_input).expanduser().resolve()
+
+    if not repo_root.exists():
+        print(err(f"Repo path not found: {repo_root}"))
+        sys.exit(1)
+
     web_dir = repo_root / "web"
     env_path = repo_root / ".env"
 
@@ -344,5 +370,14 @@ if __name__ == "__main__":
         action="store_true",
         help="Re-prompt for credentials and update Fly secrets without redeploying",
     )
+    parser.add_argument(
+        "--repo",
+        metavar="PATH",
+        help="Path to the voice-agent repo root (auto-detected when run from repo; "
+             "or set TALK_TO_CLAW_REPO env var)",
+    )
     args = parser.parse_args()
-    main(update_secrets_only=args.update_secrets)
+    main(
+        update_secrets_only=args.update_secrets,
+        repo_root=Path(args.repo).expanduser().resolve() if args.repo else None,
+    )
