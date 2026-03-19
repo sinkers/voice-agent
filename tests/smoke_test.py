@@ -174,7 +174,7 @@ async def _collect_agent_audio(lk_token: str, lk_url: str,
                     if any(b != 0 for b in raw[::SILENCE_CHECK_SAMPLE_INTERVAL]):
                         agent_frames.append(fe.frame)
                         agent_speaking.set()
-            asyncio.ensure_future(collect())
+            asyncio.create_task(collect())
 
     await room.connect(lk_url, lk_token)
 
@@ -319,7 +319,7 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
                         greeting_started.set()
                     if collecting and is_speech:
                         agent_frames.append(fe.frame)
-            asyncio.ensure_future(collect())
+            asyncio.create_task(collect())
 
     await room.connect(conn["url"], conn["token"])
 
