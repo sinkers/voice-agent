@@ -1,4 +1,4 @@
-.PHONY: test test-py test-fe test-all lint install-test-deps run stop cleanup url build-skill
+.PHONY: test test-py test-fe test-all lint lint-fix security install-test-deps run stop cleanup url build-skill
 
 # Run the voice agent in dev mode (prints call URL and streams logs)
 # The call URL is printed after hub registration and remains valid while the agent runs
@@ -105,6 +105,15 @@ lint-fix:
 	uv run ruff check --fix agent.py tests/ skill/scripts/*.py web/backend/*.py
 	uv run ruff format agent.py tests/ skill/scripts/*.py web/backend/*.py
 	@echo "✅ Linting issues fixed"
+
+# Security scanning
+security:
+	@echo "==> Running security scanner (bandit)..."
+	uv run bandit -r agent.py web/backend/*.py skill/scripts/*.py \
+		-f screen \
+		--skip B101,B603,B607,B404,B105 \
+		--quiet
+	@echo "✅ Security scan complete (no high/medium severity issues found)"
 
 # Smoke test — requires hub deployed + agent worker running
 # Reads credentials from .hub-token-voice-agent and .hub-agent-id-voice-agent

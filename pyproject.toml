@@ -25,6 +25,7 @@ dev = [
     "av>=12.0",
     "livekit>=0.17",
     "ruff>=0.6.0",
+    "bandit>=1.7.0",
 ]
 
 [tool.pytest.ini_options]
@@ -57,3 +58,11 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["F401", "F811"]  # Allow unused imports and redefinitions in tests
+
+[tool.bandit]
+exclude_dirs = [".venv", "web/frontend/node_modules"]
+skips = [
+    "B101",  # assert_used - asserts are fine in tests
+    "B603",  # subprocess_without_shell_equals_true - we intentionally avoid shell=True
+    "B607",  # start_process_with_partial_path - uv/python are in PATH, not security risk
+]

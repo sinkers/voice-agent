@@ -30,6 +30,13 @@ jobs:
       - name: Run ruff format check
         run: uv run ruff format --check agent.py tests/ skill/scripts/*.py web/backend/*.py
 
+      - name: Run security scanner (bandit)
+        run: |
+          uv run bandit -r agent.py web/backend/*.py skill/scripts/*.py \
+            -f screen \
+            --skip B101,B603,B607,B404,B105 \
+            --quiet
+
   python-tests:
     name: Python tests
     runs-on: ubuntu-latest
