@@ -243,8 +243,11 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
         if "token" in result:
             token = result["token"]
             _here = os.path.dirname(os.path.abspath(__file__))
-            with open(os.path.join(_here, f".hub-token-{base_name}"), "w") as f:
+            token_path = os.path.join(_here, f".hub-token-{base_name}")
+            with open(token_path, "w") as f:
                 f.write(token)
+            # Set secure permissions (owner read/write only)
+            os.chmod(token_path, 0o600)
             return token
 
         status = result.get("status", "")
@@ -299,6 +302,8 @@ def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, 
     agent_id_file = os.path.join(_here, f".hub-agent-id-{base_name}")
     with open(agent_id_file, "w") as f:
         f.write(data["agent_id"])
+    # Set secure permissions (owner read/write only)
+    os.chmod(agent_id_file, 0o600)
 
     return data["call_url_base"]
 
@@ -335,6 +340,8 @@ if __name__ == "__main__":
         _instance_id = uuid.uuid4().hex[:8]
         with open(_id_file, "w") as f:
             f.write(_instance_id)
+        # Set secure permissions (owner read/write only)
+        os.chmod(_id_file, 0o600)
 
     _agent_name = f"{_base_name}-{_instance_id}"
     _display_name = os.getenv("OPENCLAW_AGENT_DISPLAY_NAME", _base_name.replace("-", " ").title())
