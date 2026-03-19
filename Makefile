@@ -97,5 +97,12 @@ lint:
 
 # Smoke test — requires hub deployed + agent worker running
 # Reads credentials from .hub-token-voice-agent and .hub-agent-id-voice-agent
+# Note: Make sure agent is running first with 'make run' in another terminal
 smoke-test:
+	@echo "==> Running smoke tests"
+	@if ! lsof -ti:8081 > /dev/null 2>&1; then \
+		echo "ERROR: No agent running on port 8081"; \
+		echo "Start the agent first: make run"; \
+		exit 1; \
+	fi
 	uv run python tests/smoke_test.py
