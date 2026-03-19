@@ -150,9 +150,10 @@ async def entrypoint(ctx: JobContext) -> None:
     @ctx.room.on("track_subscribed")
     def _dbg_track(track, pub, participant):
         try:
+            from livekit import rtc
             logger.info("[AUDIO] 🎧 Track subscribed: kind=%s source=%s participant=%s",
                         track.kind, pub.source, participant.identity)
-            if track.kind.name == "KIND_AUDIO":
+            if track.kind == rtc.TrackKind.KIND_AUDIO:
                 logger.info("[AUDIO] ✅ AUDIO TRACK READY - should receive audio frames now")
         except Exception as exc:
             logger.exception("Error in track_subscribed handler: %s", exc)
