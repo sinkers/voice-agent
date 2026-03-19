@@ -90,6 +90,17 @@ class VoiceAssistant(Agent):
 
 async def entrypoint(ctx: JobContext) -> None:
     logger.info("Agent connecting to room: %s", ctx.room.name)
+
+    @ctx.room.on("track_subscribed")
+    def _dbg_track(track, pub, participant):
+        logger.info("[debug] track_subscribed: kind=%s source=%s participant=%s",
+                    track.kind, pub.source, participant.identity)
+
+    @ctx.room.on("track_published")
+    def _dbg_pub(pub, participant):
+        logger.info("[debug] track_published: source=%s participant=%s subscribed=%s",
+                    pub.source, participant.identity, pub.subscribed)
+
     _t: dict = {}
 
     try:
@@ -145,6 +156,16 @@ async def entrypoint(ctx: JobContext) -> None:
         logger.info("[debug] session.input.audio=%r", session.input.audio)
         logger.info("[debug] room participants: %r",
                     list(ctx.room.remote_participants.keys()))
+
+        # Explicit set_participant in case track_subscribed fired before
+        # _init_task resolved _participant_available_fut (race condition with
+        # explicit dispatch). Find the first non-agent human participant.
+        if session._room_io is not None:
+            for p in ctx.room.remote_participants.values():
+                if not p.identity.startswith("agent-"):
+                    logger.info("[debug] explicit set_participant: %s", p.identity)
+                    session._room_io.set_participant(p.identity)
+                    break
 
         _greeting = os.getenv("AGENT_GREETING", "")
         if _greeting:
