@@ -273,7 +273,7 @@ async def entrypoint(ctx: JobContext) -> None:
         _greeting = os.getenv("AGENT_GREETING", "")
         if _greeting:
             logger.info("[AUDIO] 📣 Playing greeting: %r", _greeting)
-            await session.say(_greeting, allow_interruptions=False)
+            await session.say(_greeting)
             logger.info("[AUDIO] 🔊 Greeting completed")
 
     except Exception:
