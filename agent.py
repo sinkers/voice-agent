@@ -20,7 +20,7 @@ from livekit.agents import (
     WorkerOptions,
     cli,
 )
-from livekit.agents.voice.room_io.types import RoomOptions
+from livekit.agents import RoomInputOptions
 from livekit.plugins import deepgram, openai, silero
 
 _SECONDS_IN_A_DAY = 86400
@@ -138,7 +138,7 @@ async def entrypoint(ctx: JobContext) -> None:
         await session.start(
             agent=VoiceAssistant(),
             room=ctx.room,
-            room_options=RoomOptions(),
+            room_input_options=RoomInputOptions(),
         )
 
         logger.info("Agent ready in room: %s", ctx.room.name)
