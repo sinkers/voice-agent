@@ -1,15 +1,15 @@
 # Voice Agent Code Review TODO
 
 Generated: 2026-03-19
-Last Updated: 2026-03-20 (Mypy Type Checking Added)
+Last Updated: 2026-03-20 (Mypy + Refactoring Complete)
 
 ## 📊 PROGRESS SUMMARY
 
-**Completed:** 19/30 issues (63%)
+**Completed:** 20/30 issues (67%)
 **Critical Issues:** 4/4 fixed ✅ (100%)
 **Major Issues:** 3/4 fixed ✅ (75%)
 **Moderate Issues:** 5/5 fixed ✅ (100%)
-**Code Quality:** 7/11 fixed (64%)
+**Code Quality:** 8/11 fixed (73%)
 
 ### Latest Session Improvements
 - ✅ CI configuration fixed (skip integration/smoke tests)
@@ -68,18 +68,24 @@ Last Updated: 2026-03-20 (Mypy Type Checking Added)
   - Consider moving to `__main__` to avoid surprising env overrides; tests currently patch this.
 
 - [x] 23. Add Comprehensive Linting to CI ✅
+<<<<<<< HEAD
   - FIXED: Added mypy type checking to CI and Makefile (PR #19)
   - ruff (linting + formatting) was already in place
   - mypy now runs on every commit and PR
   - Fixed type annotations and added type ignores for library issues
   - All 69 tests passing with mypy checks
+=======
+  - FIXED: ruff (linting + formatting) already in place
+  - FIXED: mypy type checking added (PR #19 pending)
+  - Runs on every commit and PR
+  - Enforces consistent code style across codebase
+>>>>>>> a750a57 (docs: update TODO - mark items 23, 24, 30 as complete (20/30 done))
 
-- [ ] 24. Add Security Scanner to CI
-  - Add security scanning to CI workflow
-  - Tools to consider: bandit (Python security linter), safety (dependency vulnerability scanner)
-  - Scan for common vulnerabilities (OWASP top 10)
-  - Check dependencies for known CVEs
-  - Should run on every PR and scheduled weekly
+- [x] 24. Add Security Scanner to CI ✅
+  - FIXED: bandit security scanner in Makefile and CI (commit 4031442)
+  - Scans for common vulnerabilities (OWASP top 10)
+  - Runs on every PR
+  - Can add safety for dependency CVE scanning later if needed
 
 - [ ] 25. Document Self-Hosting Options
   - Current setup uses hosted hub (voice-agent-hub.fly.dev)
@@ -159,25 +165,13 @@ Last Updated: 2026-03-20 (Mypy Type Checking Added)
   - **5 — Backwards compatibility**
     - Existing single-agent installs should keep working; detect old layout and migrate or document the path change.
 
-- [ ] 30. Configurable TTS Voice Selection
-  - **Goal:** Allow the voice to be configured per-agent rather than hardcoded to `"alloy"`.
-  - **Current:** `agent.py:92` — `tts=openai.TTS(voice="alloy")` is hardcoded.
-  - **Fix:**
-    - Add `OPENAI_TTS_VOICE` to `.env` / `env.example` (default: `alloy`).
-    - Read it in `agent.py` at startup: `openai.TTS(voice=os.getenv("OPENAI_TTS_VOICE", "alloy"))`.
-    - Document the available voices in `env.example` with gender labels:
-
-      | Voice | Gender | Character |
-      |-------|--------|-----------|
-      | `alloy` | Neutral | Default |
-      | `echo` | Male | Soft |
-      | `fable` | Male | Expressive |
-      | `onyx` | Male | Deep |
-      | `nova` | Female | Warm |
-      | `shimmer` | Female | Clear |
-
-    - During `setup.py`, optionally prompt the user to choose a voice (or accept the default).
-  - **Note:** If item 29 (multi-agent install) is implemented first, `OPENAI_TTS_VOICE` belongs in the per-agent `.env` so different agents can have different voices.
+- [x] 30. Configurable TTS Voice Selection ✅
+  - FIXED: OPENAI_TTS_VOICE env var added (commit 660d39a)
+  - FIXED: Support for Cartesia and ElevenLabs TTS providers (commit c398437)
+  - FIXED: Comprehensive voice selection documentation (commit 1f3ea07)
+  - FIXED: Interactive voice selection in setup.py
+  - All voices documented in env.example with gender labels
+  - Note: With multi-agent install (item 29), each agent can have different voices
 
 - [ ] 31. Pipeline Latency Benchmarking and Fast-Model Recommendations
   - **Goal:** Measure end-to-end and per-stage latency across interchangeable STT/LLM/TTS providers so the fastest configuration for voice can be identified and documented.
