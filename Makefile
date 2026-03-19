@@ -10,10 +10,13 @@ test-py:
 	@echo "==> Python tests"
 	uv run pytest -m "not integration" -v
 
-# Frontend (Vitest) tests only — requires `npm install` in web/frontend first
-test-fe:
+# Frontend (Vitest) tests only
+test-fe: web/frontend/node_modules
 	@echo "==> Frontend tests"
 	cd web/frontend && npm run test
+
+web/frontend/node_modules:
+	cd web/frontend && npm install
 
 # All tests including live gateway integration tests
 test-all:
