@@ -91,7 +91,7 @@ During setup, you'll be prompted to choose a TTS voice. Options:
 2. Set `OPENAI_TTS_VOICE=nova` (or any voice above)
 3. Run `python3 scripts/stop.py && python3 scripts/start.py`
 
-**Listen to voice samples:** https://platform.openai.com/docs/guides/text-to-speech/voice-options
+**Listen to voice samples:** https://platform.openai.com/docs/guides/text-to-speech
 
 **Advanced:** For faster TTS (~100ms vs ~300ms), see `.env.example` for Cartesia configuration.
 

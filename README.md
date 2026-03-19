@@ -166,7 +166,7 @@ The agent supports 6 OpenAI TTS voices. Choose one by setting `OPENAI_TTS_VOICE`
 | `nova` | Female, energetic and friendly | Upbeat interactions, customer service |
 | `shimmer` | Female, warm and soft | Calming, supportive conversations |
 
-**Listen to samples:** https://platform.openai.com/docs/guides/text-to-speech/voice-options
+**Listen to samples:** https://platform.openai.com/docs/guides/text-to-speech
 
 **To change voice:**
 ```bash

@@ -286,6 +286,49 @@ Last Updated: 2026-03-19 (Evening Session Complete)
 
   - **Do this before implementing items 29–32** — the multi-agent, session-scoped, and latency work all touch `entrypoint()`, `_create_llm()`, and `_hub_register` heavily. Doing the refactor first means each of those changes lands in a focused, well-scoped file rather than further bloating the monolith.
 
+- [ ] 34. Docker Resilience Tests: OpenClaw Gateway Restart and Reboot
+  - **Goal:** Verify that after an OpenClaw container restart or reboot, a running voice agent can still return its call URL and recover LLM routing — without the agent needing a manual restart.
+  - **Depends on:** Item 27 (Docker E2E base infrastructure).
+
+  - **Observed behaviour:** Gateway restart kills the `agent.py` processes. They do **not** survive independently. This is likely because the agent processes are running inside the same Docker container as OpenClaw — `docker restart` sends SIGTERM to all processes in the container, killing everything regardless of `start_new_session=True`. The assumption that they are independent OS processes only holds when they run on the host or in a separate container.
+
+  - **Test scenarios to cover:**
+
+  - **Scenario A — Agent process survival after gateway restart (BUG — needs fix)**
+    - `docker restart <openclaw_container>` kills agent processes. They must either survive or restart automatically.
+    - **Root cause options to investigate:**
+      1. Agent processes are children inside the same container — `docker restart` kills the whole container.
+      2. OpenClaw's skill manager tracks child PIDs and sends SIGTERM on shutdown.
+    - **Fix options (pick one):**
+      - **Preferred:** Run agent processes in a **separate container** from OpenClaw, started via `docker compose`. Gateway restart only affects the OpenClaw container; agent container is unaffected.
+      - **Alternative:** Add a process supervisor inside the container (e.g. `supervisord`) that automatically restarts `agent.py` after the container comes back up.
+      - **Lightweight alternative:** Add an `--auto-restart` flag to `start.py` that wraps the agent in a retry loop, combined with ensuring the agent PID file is written before the container fully exits so `start.py` can detect and re-launch on container start.
+    - **Assert after fix:** Agent process PID survives (separate container) or a new process is running within 10 s of container coming back up. `call_url.py` returns a valid URL within that window.
+
+  - **Scenario B — Gateway reboot with token change**
+    - Start agent + OpenClaw container.
+    - Stop container, change `OPENCLAW_GATEWAY_TOKEN` in the container env, restart.
+    - **Expected (current behaviour):** LLM calls start failing with 401 — the agent's gateway token is baked into `AsyncOpenAI`'s `default_headers` at startup and never refreshed. **This is a known gap** (see `_start_heartbeat` comment: "though in current implementation it's static").
+    - **Fix required:** Agent should re-read `~/.openclaw/openclaw.json` periodically or on auth failure (401) and refresh the gateway token without full restart. `HeartbeatThread.token_getter` is already a `Callable` designed to support this — it just needs to be wired to re-read the config file.
+    - **Verify after fix:** After token rotation and gateway restart, the next LLM call auto-recovers within one `HUB_HEARTBEAT_INTERVAL`.
+
+  - **Scenario C — Call URL remains available during full gateway outage**
+    - Stop OpenClaw container entirely (gateway unreachable).
+    - **Assert:** `call_url.py <agent_id>` still returns the stored URL instantly — it reads from `agents/<agent_id>/call_url` (item 29) or `.hub-agent-id-{base_name}`, never touches the gateway.
+    - **Assert:** Agent process stays running; hub heartbeat continues independently.
+    - **Assert:** Voice calls can still be dispatched via the hub; agent joins the room. LLM turns fail gracefully ("Give me a moment" fallback from item 31's prompt fix) rather than crashing the session.
+
+  - **Test implementation:**
+    - Use `docker compose` with the OpenClaw container alongside the agent process.
+    - Control container lifecycle via `subprocess` calls to `docker restart` / `docker stop` / `docker start`.
+    - Poll `call_url.py` output and agent logs after each event; assert expected state within a timeout.
+    - Mark as `@pytest.mark.docker` — skipped in CI by default, runnable locally with `make test-docker`.
+
+  - **What this validates that unit tests cannot:**
+    - Real HTTP connection teardown and reconnection behaviour
+    - Token expiry path (`_hub_authenticate` 401 → token deletion → re-auth)
+    - That `call_url` storage survives gateway outage (critical for item 32's session-scoped URL flow)
+
 - [ ] 28. Add WebRTC-based Smoke Test
   - Current smoke tests push PCM frames directly, bypassing WebRTC
   - Creates false positives - test passes but real browser clients may fail
