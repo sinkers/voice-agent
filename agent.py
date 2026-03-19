@@ -204,13 +204,17 @@ async def entrypoint(ctx: JobContext) -> None:
         except Exception as exc:
             logger.exception("Error in track_unsubscribed handler: %s", exc)
 
+    # Get TTS voice from environment (default: alloy)
+    tts_voice = os.getenv("OPENAI_TTS_VOICE", "alloy")
+
     try:
         session = AgentSession(
             stt=deepgram.STT(model="nova-3"),
             llm=_llm,
-            tts=openai.TTS(voice="alloy"),
+            tts=openai.TTS(voice=tts_voice),
             vad=ctx.proc.userdata["vad"],
         )
+        logger.info("Agent session configured with TTS voice: %s", tts_voice)
 
         @session.on("user_started_speaking")
         def _on_speech_start(_evt):

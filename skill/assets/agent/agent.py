@@ -85,13 +85,17 @@ class VoiceAssistant(Agent):
 async def entrypoint(ctx: JobContext) -> None:
     logger.info("Agent connecting to room: %s", ctx.room.name)
 
+    # Get TTS voice from environment (default: alloy)
+    tts_voice = os.getenv("OPENAI_TTS_VOICE", "alloy")
+
     try:
         session = AgentSession(
             stt=deepgram.STT(model="nova-3"),
             llm=_llm,
-            tts=openai.TTS(voice="alloy"),
+            tts=openai.TTS(voice=tts_voice),
             vad=ctx.proc.userdata["vad"],
         )
+        logger.info("Agent session configured with TTS voice: %s", tts_voice)
 
         await session.start(
             agent=VoiceAssistant(),
