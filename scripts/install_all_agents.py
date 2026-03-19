@@ -28,12 +28,12 @@ SHARED = {
 
 # Per-agent config: (openclaw_agent_id, display_name, greeting, http_port, session_key)
 AGENTS = [
-    ("main",   "Clive",  "Hey, it's Clive. Go ahead.",   8081, ""),
-    ("alex",   "Alex",   "Hey, it's Alex. Go ahead.",    8082, "agent:alex:telegram:direct:6946974355"),
-    ("elysse", "Elysse", "Hi, Elysse here. Go ahead.",   8083, ""),
-    ("colin",  "Colin",  "Hey, Colin here. What's up?",  8084, ""),
-    ("mandy",  "Mandy",  "Hi, this is Mandy. Go ahead.", 8085, ""),
-    ("moxie",  "Moxie",  "Hey, Moxie here. Go ahead.",   8086, ""),
+    ("main",   "Clive",  "Hey, it's Clive. Go ahead.",   8081, "agent:main:voice:direct:hub"),
+    ("alex",   "Alex",   "Hey, it's Alex. Go ahead.",    8082, "agent:alex:voice:direct:hub"),
+    ("elysse", "Elysse", "Hi, Elysse here. Go ahead.",   8083, "agent:elysse:voice:direct:hub"),
+    ("colin",  "Colin",  "Hey, Colin here. What's up?",  8084, "agent:colin:voice:direct:hub"),
+    ("mandy",  "Mandy",  "Hi, this is Mandy. Go ahead.", 8085, "agent:mandy:voice:direct:hub"),
+    ("moxie",  "Moxie",  "Hey, Moxie here. Go ahead.",   8086, "agent:moxie:voice:direct:hub"),
 ]
 
 
@@ -72,47 +72,54 @@ def install_agent(agent_id: str, display_name: str, greeting: str, port: int, se
         print(f"  ERROR: setup.py failed for {agent_id}")
         sys.exit(1)
 
-    # Patch .env with real credentials + per-agent settings
+    # Overwrite .env with clean hosted-mode config only.
+    # LiveKit/OpenAI/Deepgram credentials come from the hub at startup — not stored here.
     env_file = install_path / ".env"
-    # Hosted mode: credentials come from the hub at startup.
-    # Only write OpenClaw-specific and per-agent settings.
-    HOSTED_KEYS = {
-        "OPENCLAW_GATEWAY_URL",
-        "OPENCLAW_GATEWAY_TOKEN",
-        "OPENCLAW_AGENT_ID",
-        "OPENCLAW_AGENT_NAME",
-        "OPENCLAW_AGENT_DISPLAY_NAME",
-        "AGENT_GREETING",
-        "AGENT_HTTP_PORT",
-        "HUB_URL",
-        "OPENCLAW_SESSION_KEY",
-    }
-    env_file.write_text(
-        "# Voice agent config — hosted mode (credentials pulled from hub at startup)\n"
-        "# Only OpenClaw-specific and per-agent settings needed here.\n\n"
-    )
-    updates = {
-        "OPENCLAW_GATEWAY_URL": SHARED["OPENCLAW_GATEWAY_URL"],
-        "OPENCLAW_GATEWAY_TOKEN": SHARED["OPENCLAW_GATEWAY_TOKEN"],
-        "OPENCLAW_AGENT_ID": agent_id,
-        "OPENCLAW_AGENT_NAME": f"voice-{agent_id}",
-        "OPENCLAW_AGENT_DISPLAY_NAME": display_name,
-        "AGENT_GREETING": greeting,
-        "AGENT_HTTP_PORT": str(port),
-    }
+    lines = [
+        "# Voice agent config — hosted mode (credentials pulled from hub at startup)",
+        "# Only OpenClaw-specific and per-agent settings needed here.",
+        "",
+        f"OPENCLAW_GATEWAY_URL={SHARED['OPENCLAW_GATEWAY_URL']}",
+        f"OPENCLAW_GATEWAY_TOKEN={SHARED['OPENCLAW_GATEWAY_TOKEN']}",
+        f"OPENCLAW_AGENT_ID={agent_id}",
+        f"OPENCLAW_AGENT_NAME=voice-{agent_id}",
+        f"OPENCLAW_AGENT_DISPLAY_NAME={display_name}",
+        f"AGENT_GREETING={greeting}",
+        f"AGENT_HTTP_PORT={port}",
+    ]
     if session_key:
-        updates["OPENCLAW_SESSION_KEY"] = session_key
-    patch_env(env_file, updates)
-    print(f"  ✓ Credentials patched")
+        lines.append(f"OPENCLAW_SESSION_KEY={session_key}")
+    env_file.write_text("\n".join(lines) + "\n")
 
+    # Copy the full repo agent.py (with hub auth, workspace write, disconnect wait)
+    shutil.copy2(REPO_DIR / "agent.py", install_path / "agent.py")
+
+    # Copy hub token so workers skip device-auth flow
+    token_src = REPO_DIR / ".hub-token-voice-agent"
+    if token_src.exists():
+        token_dst = install_path / f".hub-token-voice-{agent_id}"
+        shutil.copy2(token_src, token_dst)
+
+    print(f"  ✓ Config written")
     return install_path
 
 
 def start_agent(install_path: Path, agent_id: str) -> None:
-    start_script = REPO_DIR / "skill" / "scripts" / "start.py"
-    result = subprocess.run([sys.executable, str(start_script), str(install_path)])
-    if result.returncode != 0:
-        print(f"  WARNING: start.py returned non-zero for {agent_id} — check logs")
+    """Start the worker directly — bypasses start.py which requires LIVEKIT_API_KEY."""
+    log_file = install_path / "agent.log"
+    pid_file = install_path / "agent.pid"
+    log_file.write_text("")
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    proc = subprocess.Popen(
+        ["uv", "run", "python", "-u", "agent.py"],
+        cwd=install_path,
+        stdout=open(log_file, "w"),
+        stderr=subprocess.STDOUT,
+        env=env,
+        start_new_session=True,
+    )
+    pid_file.write_text(str(proc.pid))
+    print(f"  Started PID={proc.pid}")
 
 
 def main() -> None:
