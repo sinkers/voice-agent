@@ -121,9 +121,18 @@ Last Updated: 2026-03-19
 - [ ] 22. `load_dotenv()` at import time
   - Consider moving to `__main__` to avoid surprising env overrides; tests currently patch this.
 
+- [ ] 23. **Smoke Test Using WebRTC** (NEW - HIGH PRIORITY)
+  - Current smoke test pushes PCM frames directly, bypassing WebRTC
+  - This creates false positives - test passes but web frontend may fail
+  - Fix: Add smoke test that uses livekit-client SDK to join room like a browser
+  - Should use Room.connect() and publish LocalAudioTrack via WebRTC
+  - This will test the actual code path that browser clients use
+  - Reference: Use livekit-client Python SDK or similar to browser behavior
+
 ## NOTES
 
 - Current branch: `fix/agent-audio-subscription`
 - Main branch: `master`
-- Priority: Fix critical issues first with small commits + tests
-- System is regressing — used to work, getting progressively broken
+- **Session Status:** Ready to merge - agent confirmed working via web frontend
+- **Tests:** 63/63 passing, all critical issues resolved
+- **Make Commands:** run, stop, cleanup, url all working
