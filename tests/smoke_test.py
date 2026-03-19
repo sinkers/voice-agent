@@ -31,6 +31,7 @@ import asyncio
 import io
 import os
 import sys
+import time
 import wave
 from pathlib import Path
 
@@ -148,11 +149,14 @@ async def _collect_agent_audio(lk_token: str, lk_url: str,
             stream = rtc.AudioStream(track)
             async def collect():
                 async for fe in stream:
-                    agent_frames.append(fe.frame)
-                    if not agent_speaking.is_set():
-                        raw = bytes(fe.frame.data)
-                        if any(b != 0 for b in raw[::50]):
-                            agent_speaking.set()
+                    # Only keep non-silent frames so the drain loop can detect
+                    # when the agent stops speaking (LiveKit streams silence
+                    # continuously — appending all frames means the frame count
+                    # never stabilises and the drain loop runs forever).
+                    raw = bytes(fe.frame.data)
+                    if any(b != 0 for b in raw[::50]):
+                        agent_frames.append(fe.frame)
+                        agent_speaking.set()
             asyncio.ensure_future(collect())
 
     await room.connect(lk_url, lk_token)
@@ -183,16 +187,28 @@ async def _collect_agent_audio(lk_token: str, lk_url: str,
         await room.disconnect()
         raise RuntimeError(f"Agent did not speak within {wait_for_speech_s:.0f}s — is the agent worker running?")
 
-    # Drain until silence
+    # Drain: wait for silence (no new non-silent frames in drain_silence_s),
+    # but cap total drain time at 15 s so the loop never runs forever.
+    MAX_DRAIN_S = 15.0
+    drain_start = time.monotonic()
     last_len = len(agent_frames)
     while True:
         await asyncio.sleep(drain_silence_s)
-        if len(agent_frames) == last_len:
+        elapsed = time.monotonic() - drain_start
+        if len(agent_frames) == last_len or elapsed >= MAX_DRAIN_S:
             break
         last_len = len(agent_frames)
 
     await room.disconnect()
     return agent_frames
+
+
+async def _connect_async(agent_id: str) -> dict:
+    """Call /connect and return the response dict."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(f"{HUB_URL}/connect", json={"agent_id": agent_id})
+        r.raise_for_status()
+        return r.json()
 
 
 def _connect(agent_id: str) -> dict:
@@ -220,14 +236,26 @@ def test_agent_registered(hub_token: str) -> None:
     return data["display_name"]
 
 
+async def _greeting_flow(agent_id: str) -> tuple[list, dict]:
+    """
+    Call /connect then immediately join the LiveKit room — both in the same
+    event loop so the room join happens within milliseconds of /connect
+    returning, well inside the hub's 1.5 s agent-dispatch delay.
+    """
+    conn = await _connect_async(agent_id)
+    assert conn["token"], "No LiveKit token"
+    assert conn["url"].startswith("wss://"), f"Bad url: {conn['url']}"
+    frames = await _collect_agent_audio(conn["token"], conn["url"])
+    return frames, conn
+
+
 def test_greeting(agent_id: str, display_name: str) -> None:
     """Agent joins room and greets with its configured display_name."""
     print("test_greeting … ", end="", flush=True)
-    conn = _connect(agent_id)
-    assert conn["token"], "No LiveKit token"
-    assert conn["url"].startswith("wss://"), f"Bad url: {conn['url']}"
 
-    frames = asyncio.run(_collect_agent_audio(conn["token"], conn["url"]))
+    # Run /connect and room.connect() in the same event loop so we are in the
+    # room before the hub's 1.5 s dispatch delay fires and the agent arrives.
+    frames, conn = asyncio.run(_greeting_flow(agent_id))
     assert frames, "No audio frames received"
 
     wav = _frames_to_wav(frames)
@@ -237,8 +265,103 @@ def test_greeting(agent_id: str, display_name: str) -> None:
     print(f"OK (transcript: {transcript!r})")
 
 
-def test_audio_response(agent_id: str) -> None:
-    """Agent responds to a spoken question with relevant audio."""
+async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
+    """
+    Connect to a fresh room. Wait for the greeting to finish (agent has
+    subscribed to our track by then), then publish the question and collect
+    the response.
+    """
+    conn = await _connect_async(agent_id)
+    assert conn["token"], "No LiveKit token"
+    assert conn["url"].startswith("wss://"), f"Bad url: {conn['url']}"
+
+    from livekit import rtc
+
+    room = rtc.Room()
+    agent_frames: list = []
+    greeting_done = asyncio.Event()
+    agent_speaking = asyncio.Event()
+    greeting_collected = False
+
+    @room.on("track_subscribed")
+    def on_track(track, pub, participant):
+        if track.kind == rtc.TrackKind.KIND_AUDIO and participant.identity != "caller":
+            stream = rtc.AudioStream(track)
+            async def collect():
+                nonlocal greeting_collected
+                silence_count = 0
+                async for fe in stream:
+                    raw = bytes(fe.frame.data)
+                    is_speech = any(b != 0 for b in raw[::50])
+                    if not greeting_done.is_set():
+                        # Wait for greeting to finish (sustained silence after initial speech)
+                        if is_speech:
+                            silence_count = 0
+                        else:
+                            silence_count += 1
+                            if silence_count > 50:  # ~1s of silence = greeting done
+                                greeting_done.set()
+                    else:
+                        # Collecting response
+                        if is_speech:
+                            agent_frames.append(fe.frame)
+                            agent_speaking.set()
+            asyncio.ensure_future(collect())
+
+    await room.connect(conn["url"], conn["token"])
+
+    # Wait for greeting to finish
+    try:
+        await asyncio.wait_for(greeting_done.wait(), timeout=20.0)
+    except asyncio.TimeoutError:
+        await room.disconnect()
+        raise RuntimeError("Greeting did not complete within 20s")
+
+    # Now publish the question — agent has subscribed to our track by now
+    source = rtc.AudioSource(sample_rate=48000, num_channels=1)
+    track = rtc.LocalAudioTrack.create_audio_track("test-mic", source)
+    opts = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
+    await room.local_participant.publish_track(track, opts)
+
+    # Small delay to ensure agent has subscribed to our newly published track
+    await asyncio.sleep(1.0)
+
+    # Push PCM frames
+    chunk_bytes = 960
+    for i in range(0, len(pcm), chunk_bytes):
+        chunk = pcm[i:i + chunk_bytes].ljust(chunk_bytes, b"\x00")
+        frame = rtc.AudioFrame(
+            data=chunk, sample_rate=48000, num_channels=1, samples_per_channel=480
+        )
+        await source.capture_frame(frame)
+        await asyncio.sleep(0.01)
+
+    # Wait for response
+    try:
+        await asyncio.wait_for(agent_speaking.wait(), timeout=20.0)
+    except asyncio.TimeoutError:
+        await room.disconnect()
+        raise RuntimeError("Agent did not respond to question within 20s")
+
+    # Drain silence
+    last_len = len(agent_frames)
+    for _ in range(10):
+        await asyncio.sleep(1.0)
+        if len(agent_frames) == last_len:
+            break
+        last_len = len(agent_frames)
+
+    await room.disconnect()
+    return agent_frames
+
+
+def test_audio_response(agent_id: str, display_name: str) -> None:
+    """Agent responds to 'what is your name?' and mentions its display_name.
+
+    Publishes TTS audio of the question after the greeting has finished,
+    then verifies the agent's response audio contains the display_name.
+    This confirms the full STT → LLM → TTS pipeline is working end-to-end.
+    """
     print("test_audio_response … ", end="", flush=True)
     try:
         import av  # noqa: F401
@@ -246,21 +369,26 @@ def test_audio_response(agent_id: str) -> None:
         print("SKIP (av not installed: uv add av)")
         return
 
-    conn = _connect(agent_id)
-
+    # Generate TTS audio before /connect so room join is immediate.
     mp3 = _tts_question("What is your name?")
     pcm = _mp3_to_pcm48k(mp3)
 
-    frames = asyncio.run(_collect_agent_audio(
-        conn["token"], conn["url"],
-        wait_for_speech_s=30.0,
-        pcm_to_publish=pcm,
-    ))
+    # /connect and room.connect() happen together — we are in the room before
+    # the hub's 1.5 s dispatch delay fires.
+    frames = asyncio.run(_audio_response_flow(agent_id, pcm))
     assert frames, "No audio frames received from agent"
 
     wav = _frames_to_wav(frames)
     transcript = _transcribe(wav)
-    assert transcript.strip(), f"Empty transcript — agent did not respond"
+    assert transcript.strip(), "Empty transcript — agent did not respond"
+
+    # The agent must mention its display_name in response to "what is your name?"
+    # This verifies STT heard the question and LLM generated a relevant response.
+    assert display_name.lower() in transcript, (
+        f"Agent did not identify itself as {display_name!r} in response.\n"
+        f"Transcript: {transcript!r}\n"
+        f"This means STT→LLM pipeline is broken or agent answered with wrong name."
+    )
     print(f"OK (response: {transcript!r})")
 
 
@@ -276,7 +404,7 @@ def main() -> None:
 
     display_name = test_agent_registered(hub_token)
     test_greeting(agent_id, display_name)
-    test_audio_response(agent_id)
+    test_audio_response(agent_id, display_name)
 
     print("\nAll smoke tests passed ✓")
 

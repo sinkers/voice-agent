@@ -20,7 +20,7 @@ from livekit.agents import (
     WorkerOptions,
     cli,
 )
-from livekit.agents.voice.room_io.types import RoomOptions
+from livekit.agents import RoomInputOptions
 from livekit.plugins import deepgram, openai, silero
 
 _SECONDS_IN_A_DAY = 86400
@@ -56,7 +56,12 @@ def _create_llm() -> openai.LLM:
         # Without this, each API call creates a throwaway session.
         headers["x-openclaw-session-key"] = session_key
 
-    client = AsyncOpenAI(base_url=url, api_key=token, default_headers=headers)
+    client = AsyncOpenAI(
+        base_url=url,
+        api_key=token,
+        default_headers=headers,
+        timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0),
+    )
     return openai.LLM(client=client, model=f"openclaw:{agent_id}")
 
 
@@ -90,7 +95,16 @@ class VoiceAssistant(Agent):
 
 async def entrypoint(ctx: JobContext) -> None:
     logger.info("Agent connecting to room: %s", ctx.room.name)
-    await ctx.connect()
+
+    @ctx.room.on("track_subscribed")
+    def _dbg_track(track, pub, participant):
+        logger.info("[debug] track_subscribed: kind=%s source=%s participant=%s",
+                    track.kind, pub.source, participant.identity)
+
+    @ctx.room.on("track_published")
+    def _dbg_pub(pub, participant):
+        logger.info("[debug] track_published: source=%s participant=%s subscribed=%s",
+                    pub.source, participant.identity, pub.subscribed)
 
     _t: dict = {}
 
@@ -140,13 +154,23 @@ async def entrypoint(ctx: JobContext) -> None:
         await session.start(
             agent=VoiceAssistant(),
             room=ctx.room,
-            room_options=RoomOptions(),
+            room_input_options=RoomInputOptions(),
         )
 
         logger.info("Agent ready in room: %s", ctx.room.name)
         logger.info("[debug] session.input.audio=%r", session.input.audio)
         logger.info("[debug] room participants: %r",
                     list(ctx.room.remote_participants.keys()))
+
+        # Explicit set_participant in case track_subscribed fired before
+        # _init_task resolved _participant_available_fut (race condition with
+        # explicit dispatch). Find the first non-agent human participant.
+        if session._room_io is not None:
+            for p in ctx.room.remote_participants.values():
+                if not p.identity.startswith("agent-"):
+                    logger.info("[debug] explicit set_participant: %s", p.identity)
+                    session._room_io.set_participant(p.identity)
+                    break
 
         _greeting = os.getenv("AGENT_GREETING", "")
         if _greeting:
