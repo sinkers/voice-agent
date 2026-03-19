@@ -1,4 +1,4 @@
-.PHONY: test test-py test-fe test-all lint install-test-deps run
+.PHONY: test test-py test-fe test-all lint install-test-deps run stop cleanup
 
 # Run the voice agent in dev mode (prints call URL and streams logs)
 # The call URL is printed after hub registration and remains valid while the agent runs
@@ -9,6 +9,37 @@ run:
 	@echo "==> Logs will stream below (press Ctrl+C to stop)"
 	@echo ""
 	uv run python agent.py dev
+
+# Stop any running agent processes (finds processes using port 8081)
+stop:
+	@echo "==> Stopping voice agent..."
+	@if lsof -ti:8081 > /dev/null 2>&1; then \
+		echo "Found agent process on port 8081, killing..."; \
+		lsof -ti:8081 | xargs kill; \
+		echo "Agent stopped"; \
+	else \
+		echo "No agent process found on port 8081"; \
+	fi
+
+# Clean up temporary files and cached credentials
+# Warning: This will log you out and require re-authentication with the hub
+cleanup:
+	@echo "==> Cleaning up agent files..."
+	@echo "Warning: This will remove cached credentials and require re-authentication"
+	@read -p "Continue? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		rm -f .hub-token-* .hub-agent-id-* .agent-instance-id-*; \
+		rm -f .hub-token-*.tmp .hub-agent-id-*.tmp .agent-instance-id-*.tmp; \
+		echo "Cleaned up:"; \
+		echo "  - Hub authentication tokens (.hub-token-*)"; \
+		echo "  - Hub agent IDs (.hub-agent-id-*)"; \
+		echo "  - Agent instance IDs (.agent-instance-id-*)"; \
+		echo "  - Temporary files (*.tmp)"; \
+		echo "Done! Run 'make run' to re-authenticate."; \
+	else \
+		echo "Cleanup cancelled"; \
+	fi
 
 # Run all unit tests: Python + frontend
 test: test-py test-fe
