@@ -597,7 +597,7 @@ if __name__ == "__main__":
     except RuntimeError as exc:
         # If agent not registered yet (404), use .env values as initial config
         if "404" in str(exc) and "No agent registered" in str(exc):
-            print("[agent] First run detected - using .env credentials for initial registration")
+            logger.info("First run detected - using .env credentials for initial registration")
             _config = {
                 "livekit_url": os.getenv("LIVEKIT_URL", ""),
                 "livekit_api_key": os.getenv("LIVEKIT_API_KEY", ""),
