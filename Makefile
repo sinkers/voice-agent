@@ -1,4 +1,4 @@
-.PHONY: test test-py test-fe test-all lint install-test-deps run stop cleanup
+.PHONY: test test-py test-fe test-all lint install-test-deps run stop cleanup url
 
 # Run the voice agent in dev mode (prints call URL and streams logs)
 # The call URL is printed after hub registration and remains valid while the agent runs
@@ -9,6 +9,28 @@ run:
 	@echo "==> Logs will stream below (press Ctrl+C to stop)"
 	@echo ""
 	uv run python agent.py dev
+
+# Print the call URL for the running/registered agent
+# This generates a fresh URL that can be shared for testing
+# Each visitor gets their own room - URLs don't expire
+url:
+	@if [ -f .hub-agent-id-voice-agent ]; then \
+		agent_id=$$(cat .hub-agent-id-voice-agent); \
+		hub_url=$${HUB_URL:-https://voice-agent-hub.fly.dev}; \
+		echo ""; \
+		echo "================================================================================"; \
+		echo "📞 Voice Agent Call URL"; \
+		echo "================================================================================"; \
+		echo ""; \
+		echo "   $$hub_url/call?agent_id=$$agent_id"; \
+		echo ""; \
+		echo "Share this URL to start a voice call. Each visitor gets their own room."; \
+		echo "================================================================================"; \
+		echo ""; \
+	else \
+		echo "Error: Agent not registered yet. Run 'make run' first."; \
+		exit 1; \
+	fi
 
 # Stop any running agent processes (finds processes using port 8081)
 stop:

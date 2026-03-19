@@ -571,7 +571,13 @@ if __name__ == "__main__":
             os.environ[_env_key] = _val
 
     _call_url_base = _hub_register(_hub_url, _hub_token, _agent_name, _display_name, _config, _base_name)
-    print(f"[agent] Call URL: {_call_url_base}")
+
+    # Print call URL prominently for easy testing
+    print("\n" + "=" * 80)
+    print("🎤 VOICE AGENT READY")
+    print("=" * 80)
+    print(f"\n📞 Call URL (for testing):\n   {_call_url_base}\n")
+    print("=" * 80 + "\n")
 
     # Start heartbeat thread and register shutdown handler
     _heartbeat = _start_heartbeat(_hub_url, _hub_token)
