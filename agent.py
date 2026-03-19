@@ -101,6 +101,10 @@ class VoiceAssistant(Agent):
 async def entrypoint(ctx: JobContext) -> None:
     logger.info("Agent connecting to room: %s", ctx.room.name)
 
+    # Track timing data for debugging (cleared on exit)
+    _t: dict = {}
+    session = None
+
     @ctx.room.on("track_subscribed")
     def _dbg_track(track, pub, participant):
         try:
@@ -116,8 +120,6 @@ async def entrypoint(ctx: JobContext) -> None:
                         pub.source, participant.identity, pub.subscribed)
         except Exception as exc:
             logger.exception("Error in track_published handler: %s", exc)
-
-    _t: dict = {}
 
     try:
         session = AgentSession(
@@ -207,6 +209,10 @@ async def entrypoint(ctx: JobContext) -> None:
     except Exception:
         logger.exception("Agent failed to start")
         raise
+    finally:
+        # Clean up timing data
+        _t.clear()
+        logger.info("Agent entrypoint cleanup complete for room: %s", ctx.room.name)
 
 
 def prewarm(proc) -> None:
