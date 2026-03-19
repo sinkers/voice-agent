@@ -220,21 +220,30 @@ def prewarm(proc) -> None:
 
 
 def _hub_authenticate(hub_url: str, base_name: str) -> str:
-    """Return a valid hub token, prompting device auth if needed."""
+    """Return a valid hub token, prompting device auth if needed.
+    Raises RuntimeError on network or server errors."""
     _here = os.path.dirname(os.path.abspath(__file__))
     token_file = os.path.join(_here, f".hub-token-{base_name}")
 
     if os.path.exists(token_file):
-        with open(token_file) as f:
-            token = f.read().strip()
-        if token:
-            return token
+        try:
+            with open(token_file) as f:
+                token = f.read().strip()
+            if token:
+                return token
+        except OSError as exc:
+            logger.warning("Failed to read token file, will re-authenticate: %s", exc)
 
     # Device-code flow
-    with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
-        resp = client.post(f"{hub_url}/auth/device")
-        resp.raise_for_status()
-        data = resp.json()
+    try:
+        with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
+            resp = client.post(f"{hub_url}/auth/device")
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Failed to initiate device auth: {exc}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Failed to parse device auth response: {exc}") from exc
 
     device_code = data["device_code"]
     verification_url = data["verification_url"]
@@ -246,10 +255,17 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
     deadline = time.time() + expires_in
     while time.time() < deadline:
         time.sleep(HUB_DEVICE_AUTH_POLL_INTERVAL)
-        with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
-            resp = client.get(f"{hub_url}/auth/device/token", params={"code": device_code})
-            resp.raise_for_status()
-            result = resp.json()
+        try:
+            with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
+                resp = client.get(f"{hub_url}/auth/device/token", params={"code": device_code})
+                resp.raise_for_status()
+                result = resp.json()
+        except httpx.RequestError as exc:
+            logger.warning("Device auth poll failed, will retry: %s", exc)
+            continue
+        except Exception as exc:
+            logger.warning("Failed to parse device auth poll response, will retry: %s", exc)
+            continue
 
         if "token" in result:
             token = result["token"]
@@ -273,42 +289,77 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
 
 def _hub_get_config(hub_url: str, token: str, base_name: str) -> dict:
     """Fetch agent config from hub. Returns config dict.
-    Raises ValueError if token is invalid (caller should re-auth)."""
+    Raises ValueError if token is invalid (caller should re-auth).
+    Raises RuntimeError for network or server errors."""
     _here = os.path.dirname(os.path.abspath(__file__))
-    with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
-        resp = client.get(
-            f"{hub_url}/agent/config",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+    try:
+        with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
+            resp = client.get(
+                f"{hub_url}/agent/config",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.TimeoutException:
+        raise RuntimeError(f"Hub request timed out after {HUB_REQUEST_TIMEOUT}s: {hub_url}")
+    except httpx.ConnectError as exc:
+        raise RuntimeError(f"Failed to connect to hub: {hub_url}") from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Hub request failed: {exc}") from exc
+
     if resp.status_code == 401:
         # Token expired — delete it so next call triggers re-auth
         token_file = os.path.join(_here, f".hub-token-{base_name}")
         if os.path.exists(token_file):
-            os.remove(token_file)
+            try:
+                os.remove(token_file)
+            except OSError as exc:
+                logger.warning("Failed to remove expired token file: %s", exc)
         raise ValueError("hub token invalid or expired")
-    resp.raise_for_status()
-    return resp.json()
+
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(f"Hub returned error {resp.status_code}: {resp.text}") from exc
+
+    try:
+        return resp.json()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to parse hub response as JSON: {resp.text[:200]}") from exc
 
 
 def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, config: dict, base_name: str) -> str:
-    """Register agent with hub, persist agent_id, return call_url_base."""
+    """Register agent with hub, persist agent_id, return call_url_base.
+    Raises RuntimeError on network or server errors."""
     _here = os.path.dirname(os.path.abspath(__file__))
-    with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
-        resp = client.post(
-            f"{hub_url}/agent/register",
-            headers={"Authorization": f"Bearer {token}"},
-            json={
-                "agent_name": agent_name,
-                "display_name": display_name,
-                "livekit_url": config.get("livekit_url", ""),
-                "livekit_api_key": config.get("livekit_api_key", ""),
-                "livekit_api_secret": config.get("livekit_api_secret", ""),
-                "deepgram_api_key": config.get("deepgram_api_key", ""),
-                "openai_api_key": config.get("openai_api_key", ""),
-            },
-        )
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
+            resp = client.post(
+                f"{hub_url}/agent/register",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "agent_name": agent_name,
+                    "display_name": display_name,
+                    "livekit_url": config.get("livekit_url", ""),
+                    "livekit_api_key": config.get("livekit_api_key", ""),
+                    "livekit_api_secret": config.get("livekit_api_secret", ""),
+                    "deepgram_api_key": config.get("deepgram_api_key", ""),
+                    "openai_api_key": config.get("openai_api_key", ""),
+                },
+            )
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Hub registration request failed: {exc}") from exc
+
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(f"Hub registration failed with status {resp.status_code}: {resp.text}") from exc
+
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to parse hub registration response: {resp.text[:200]}") from exc
+
+    if "agent_id" not in data or "call_url_base" not in data:
+        raise RuntimeError(f"Hub registration response missing required fields: {data}")
 
     agent_id_file = os.path.join(_here, f".hub-agent-id-{base_name}")
     with open(agent_id_file, "w") as f:
