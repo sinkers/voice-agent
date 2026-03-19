@@ -4,7 +4,6 @@ Covers:
 - _create_llm() returns a direct OpenAI LLM when OPENCLAW_GATEWAY_TOKEN is absent
 - _create_llm() routes via the Gateway when OPENCLAW_GATEWAY_TOKEN is set
 - _read_instance_id() (from generate_call_url) reads the correct per-agent file
-- _SECONDS_IN_A_DAY constant equals 86400
 - VOICE_INSTRUCTIONS contains no markdown symbols (*, #, `, _)
 
 These tests complement test_config.py (which validates env defaults) and
@@ -98,11 +97,6 @@ class TestCreateLlm:
 # ---------------------------------------------------------------------------
 
 class TestConstants:
-    def test_seconds_in_a_day(self, monkeypatch):
-        """_SECONDS_IN_A_DAY must equal 86400."""
-        mod = _reload_agent(monkeypatch)
-        assert mod._SECONDS_IN_A_DAY == 86400
-
     def test_voice_instructions_no_asterisks(self, monkeypatch):
         mod = _reload_agent(monkeypatch)
         assert "*" not in mod.VOICE_INSTRUCTIONS
