@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import sys
 import threading
 import time
 import uuid
@@ -175,6 +177,15 @@ async def entrypoint(ctx: JobContext) -> None:
         _greeting = os.getenv("AGENT_GREETING", "")
         if _greeting:
             await session.say(_greeting)
+
+        # Keep the entrypoint alive until the room disconnects.
+        # session.start() is non-blocking in livekit-agents 1.x — if the
+        # entrypoint returns, the job is torn down immediately after the greeting.
+        _disconnected = asyncio.Event()
+        ctx.room.on("disconnected", lambda *_: _disconnected.set())
+        if ctx.room.isconnected():
+            await _disconnected.wait()
+
     except Exception:
         logger.exception("Agent failed to start")
         raise
@@ -384,6 +395,10 @@ if __name__ == "__main__":
     _start_heartbeat(_hub_url, _hub_token)
 
     _port = int(os.getenv("AGENT_HTTP_PORT", "8081"))
+
+    # cli.run_app requires a subcommand — inject "start" if invoked bare
+    if len(sys.argv) == 1:
+        sys.argv.append("start")
 
     cli.run_app(
         WorkerOptions(
