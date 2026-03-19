@@ -353,6 +353,12 @@ The SIP bridge approach is simpler — the .NET bot acts as a SIP client diallin
 
 ---
 
+## Frontend
+
+> **The canonical web frontend lives in the [`voice-agent-hub`](../voice-agent-hub/) repo** (`voice-agent-hub/frontend/`), not here.
+>
+> The `web/` directory in this repo is an old POC frontend and is no longer maintained. Do not use it for new development.
+
 ## Project structure
 
 ```
