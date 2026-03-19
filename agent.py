@@ -56,7 +56,12 @@ def _create_llm() -> openai.LLM:
         # Without this, each API call creates a throwaway session.
         headers["x-openclaw-session-key"] = session_key
 
-    client = AsyncOpenAI(base_url=url, api_key=token, default_headers=headers)
+    client = AsyncOpenAI(
+        base_url=url,
+        api_key=token,
+        default_headers=headers,
+        timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0),
+    )
     return openai.LLM(client=client, model=f"openclaw:{agent_id}")
 
 
