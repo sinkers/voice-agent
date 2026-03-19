@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import logging
 import os
+import platform
 import threading
 import time
 import uuid
 
 import httpx
 from dotenv import load_dotenv
+
+# Platform-specific file locking
+_IS_WINDOWS = platform.system() == "Windows"
+if not _IS_WINDOWS:
+    import fcntl
+else:
+    import msvcrt
 
 load_dotenv()
 
@@ -32,6 +41,31 @@ HUB_HEARTBEAT_INTERVAL = 30.0  # Time between heartbeat requests
 HUB_DEVICE_AUTH_POLL_INTERVAL = 3.0  # Time between device auth polls
 
 logger = logging.getLogger("voice-agent")
+
+
+@contextlib.contextmanager
+def _file_lock(file_obj):
+    """Context manager for file locking (cross-platform).
+
+    Args:
+        file_obj: Open file object to lock
+
+    Yields:
+        The locked file object
+    """
+    try:
+        if _IS_WINDOWS:
+            # Windows: lock using msvcrt
+            msvcrt.locking(file_obj.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            # Unix: lock using fcntl
+            fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX)
+        yield file_obj
+    finally:
+        if _IS_WINDOWS:
+            msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
 
 def _create_llm() -> openai.LLM:
     """Create the LLM client.
@@ -228,10 +262,11 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
 
     if os.path.exists(token_file):
         try:
-            with open(token_file) as f:
-                token = f.read().strip()
-            if token:
-                return token
+            with open(token_file, "r+") as f:
+                with _file_lock(f):
+                    token = f.read().strip()
+                    if token:
+                        return token
         except OSError as exc:
             logger.warning("Failed to read token file, will re-authenticate: %s", exc)
 
@@ -272,10 +307,17 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
             token = result["token"]
             _here = os.path.dirname(os.path.abspath(__file__))
             token_path = os.path.join(_here, f".hub-token-{base_name}")
-            with open(token_path, "w") as f:
-                f.write(token)
-            # Set secure permissions (owner read/write only)
-            os.chmod(token_path, 0o600)
+            # Use atomic write: write to temp file, then rename
+            temp_path = f"{token_path}.tmp"
+            with open(temp_path, "w") as f:
+                with _file_lock(f):
+                    f.write(token)
+                    f.flush()
+                    os.fsync(f.fileno())  # Ensure written to disk
+            # Set secure permissions before making visible
+            os.chmod(temp_path, 0o600)
+            # Atomic rename (overwrites existing file)
+            os.replace(temp_path, token_path)
             return token
 
         status = result.get("status", "")
@@ -362,11 +404,17 @@ def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, 
     if "agent_id" not in data or "call_url_base" not in data:
         raise RuntimeError(f"Hub registration response missing required fields: {data}")
 
+    # Write agent ID atomically
     agent_id_file = os.path.join(_here, f".hub-agent-id-{base_name}")
-    with open(agent_id_file, "w") as f:
-        f.write(data["agent_id"])
-    # Set secure permissions (owner read/write only)
-    os.chmod(agent_id_file, 0o600)
+    temp_path = f"{agent_id_file}.tmp"
+    with open(temp_path, "w") as f:
+        with _file_lock(f):
+            f.write(data["agent_id"])
+            f.flush()
+            os.fsync(f.fileno())
+    # Set secure permissions before making visible
+    os.chmod(temp_path, 0o600)
+    os.replace(temp_path, agent_id_file)
 
     return data["call_url_base"]
 
@@ -460,14 +508,20 @@ if __name__ == "__main__":
     # Persist instance ID across restarts
     _id_file = os.path.join(_here, f".agent-instance-id-{_base_name}")
     if os.path.exists(_id_file):
-        with open(_id_file) as f:
-            _instance_id = f.read().strip()
+        with open(_id_file, "r") as f:
+            with _file_lock(f):
+                _instance_id = f.read().strip()
     else:
         _instance_id = uuid.uuid4().hex[:8]
-        with open(_id_file, "w") as f:
-            f.write(_instance_id)
-        # Set secure permissions (owner read/write only)
-        os.chmod(_id_file, 0o600)
+        temp_path = f"{_id_file}.tmp"
+        with open(temp_path, "w") as f:
+            with _file_lock(f):
+                f.write(_instance_id)
+                f.flush()
+                os.fsync(f.fileno())
+        # Set secure permissions before making visible
+        os.chmod(temp_path, 0o600)
+        os.replace(temp_path, _id_file)
 
     _agent_name = f"{_base_name}-{_instance_id}"
     _display_name = os.getenv("OPENCLAW_AGENT_DISPLAY_NAME", _base_name.replace("-", " ").title())
