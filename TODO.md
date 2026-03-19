@@ -331,6 +331,43 @@ Last Updated: 2026-03-20 (Mypy + Refactoring Complete)
   - Need smoke test using livekit-client SDK to simulate actual browser connection
   - Should use Room.connect() and publish LocalAudioTrack via WebRTC
 
+- [ ] 35. Redesign `Call.tsx` — Phone Call UI
+  - **Goal:** Replace the current minimal debug layout with a proper phone-call-style screen. Currently `AgentUI` is a centred badge + subtitle + 5 fixed bars; `MicrophoneSelector` is a fixed top-right dropdown; the mute button is buried inside LiveKit's `<ControlBar>`.
+
+  - **1 — Phone-call layout (`AgentUI`)**
+    - Large circular avatar centred on screen (80–100px diameter). Use agent initials as a fallback since there's no image URL yet.
+    - Agent display name (`connectResult.agent`) as the primary heading below the avatar.
+    - State label (`Listening`, `Thinking`, `Speaking`, `Connecting`) as a smaller subtitle beneath the name.
+    - Remove the existing badge / text hint — the avatar + state label replace all of that.
+
+  - **2 — Big mute button**
+    - A single large circle button (64px) centred at the bottom of the screen — the dominant interactive element, like a phone call.
+    - Shows mic icon when unmuted, crossed-mic icon when muted. Red when muted, dark/neutral when live.
+    - Replaces `<ControlBar controls={{ microphone: true, ... }}>` which is currently the only mute affordance.
+    - Wire via `room.localParticipant.setMicrophoneEnabled(toggle)`.
+
+  - **3 — Mic selector: always visible, icon-driven**
+    - Remove the `if (audioDevices.length <= 1) return null` guard — always show the selected device name.
+    - Replace the fixed top-right dropdown with a mic icon button adjacent to the mute button. Clicking it opens a popover listing available devices with a checkmark next to the active one.
+    - Display the active device label (truncated to ~30 chars) as a caption under the mic icon so it's always visible without opening the selector.
+    - `useMediaDeviceSelect` is already wired in `MicrophoneSelector` — keep that hook, change the presentation.
+
+  - **4 — `BarVisualizer` for input and agent audio**
+    - Replace `AudioLevelIndicator`'s 5 fixed bars with `<BarVisualizer>` from `@livekit/components-react` (already in node_modules).
+    - **User input:** `BarVisualizer` driven by the local mic `TrackReference` (from `useTracks`), visible whenever the mic is live.
+    - **Agent audio:** `BarVisualizer` driven by `audioTrack` from `useVoiceAssistant()`, with `state` prop passed so it automatically animates through connecting/listening/thinking states and switches to real audio amplitude when speaking.
+    - Usage pattern: `<BarVisualizer state={vaState} trackRef={audioTrack} barCount={20} />`
+    - The two visualizers are labelled "You" and the agent name so it's clear which is which.
+    - Note: `BarVisualizer` is multiband frequency bars, not a time-domain oscilloscope. If a true waveform is wanted later, `createAudioAnalyser` from `livekit-client` (already a dependency) can be used with a canvas — no extra packages needed.
+
+  - **5 — Animated avatar ring when agent is speaking (bonus)**
+    - When `state === "speaking"`, add a pulsing ring animation around the avatar circle.
+    - Use `useTrackVolume(audioTrack)` to drive the ring scale inline (`scale(1 + volume * 0.15)`) so it breathes with the speech amplitude rather than a fixed CSS loop.
+    - Pure CSS + inline style — no animation libraries needed.
+
+  - **File to change:** `voice-agent-hub/frontend/src/pages/Call.tsx` (single file, all components are local).
+  - **LK hooks/components already available:** `useVoiceAssistant`, `useTrackVolume`, `useTracks`, `useMediaDeviceSelect`, `<BarVisualizer>` — no new dependencies required.
+
 ## NOTES
 
 - **Current Status:** All critical issues fixed, agent stable and working
