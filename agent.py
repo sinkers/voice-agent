@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 import threading
@@ -370,23 +371,86 @@ def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, 
     return data["call_url_base"]
 
 
-def _start_heartbeat(hub_url: str, token: str) -> None:
-    """Start a daemon thread that sends heartbeats every HUB_HEARTBEAT_INTERVAL seconds."""
-    def _loop():
-        while True:
-            time.sleep(HUB_HEARTBEAT_INTERVAL)
+class HeartbeatThread:
+    """Manages periodic heartbeat requests to the hub in a background thread."""
+
+    def __init__(self, hub_url: str, token_getter: callable):
+        """Initialize heartbeat thread.
+
+        Args:
+            hub_url: Base URL of the hub
+            token_getter: Callable that returns the current auth token (allows refreshing)
+        """
+        self.hub_url = hub_url
+        self.token_getter = token_getter
+        self.shutdown_event = threading.Event()
+        self.thread = None
+        self.failure_count = 0
+        self.max_failures = 10  # Stop logging after this many consecutive failures
+
+    def _loop(self):
+        """Background thread loop that sends heartbeats."""
+        while not self.shutdown_event.is_set():
+            # Use wait() instead of sleep() so shutdown is responsive
+            if self.shutdown_event.wait(timeout=HUB_HEARTBEAT_INTERVAL):
+                break  # Shutdown requested
+
             try:
+                token = self.token_getter()
                 with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
-                    client.post(
-                        f"{hub_url}/agent/heartbeat",
+                    resp = client.post(
+                        f"{self.hub_url}/agent/heartbeat",
                         headers={"Authorization": f"Bearer {token}"},
                         timeout=HUB_HEARTBEAT_TIMEOUT,
                     )
+                    resp.raise_for_status()
+                # Reset failure count on success
+                if self.failure_count > 0:
+                    logger.info("Heartbeat recovered after %d failures", self.failure_count)
+                    self.failure_count = 0
             except Exception as exc:
-                logger.warning("Heartbeat failed: %s", exc)
+                self.failure_count += 1
+                if self.failure_count <= self.max_failures:
+                    logger.warning("Heartbeat failed (#%d): %s", self.failure_count, exc)
+                elif self.failure_count == self.max_failures + 1:
+                    logger.error("Heartbeat failing repeatedly, suppressing further warnings")
 
-    t = threading.Thread(target=_loop, daemon=True)
-    t.start()
+    def start(self):
+        """Start the heartbeat thread."""
+        if self.thread is not None:
+            logger.warning("Heartbeat thread already started")
+            return
+        self.thread = threading.Thread(target=self._loop, daemon=True, name="HeartbeatThread")
+        self.thread.start()
+        logger.info("Heartbeat thread started")
+
+    def stop(self, timeout=5.0):
+        """Stop the heartbeat thread gracefully.
+
+        Args:
+            timeout: Max seconds to wait for thread to stop
+        """
+        if self.thread is None:
+            return
+        logger.info("Stopping heartbeat thread...")
+        self.shutdown_event.set()
+        self.thread.join(timeout=timeout)
+        if self.thread.is_alive():
+            logger.warning("Heartbeat thread did not stop within %s seconds", timeout)
+        else:
+            logger.info("Heartbeat thread stopped")
+        self.thread = None
+
+
+def _start_heartbeat(hub_url: str, token: str) -> HeartbeatThread:
+    """Start a daemon thread that sends heartbeats every HUB_HEARTBEAT_INTERVAL seconds.
+
+    Returns the HeartbeatThread instance for shutdown control."""
+    # Use a lambda to allow token to be updated if needed
+    # (though in current implementation it's static)
+    heartbeat = HeartbeatThread(hub_url, lambda: token)
+    heartbeat.start()
+    return heartbeat
 
 
 if __name__ == "__main__":
@@ -438,7 +502,9 @@ if __name__ == "__main__":
     _call_url_base = _hub_register(_hub_url, _hub_token, _agent_name, _display_name, _config, _base_name)
     print(f"[agent] Call URL: {_call_url_base}")
 
-    _start_heartbeat(_hub_url, _hub_token)
+    # Start heartbeat thread and register shutdown handler
+    _heartbeat = _start_heartbeat(_hub_url, _hub_token)
+    atexit.register(_heartbeat.stop)
 
     _port = int(os.getenv("AGENT_HTTP_PORT", "8081"))
 
