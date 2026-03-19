@@ -90,8 +90,6 @@ class VoiceAssistant(Agent):
 
 async def entrypoint(ctx: JobContext) -> None:
     logger.info("Agent connecting to room: %s", ctx.room.name)
-    await ctx.connect()
-
     _t: dict = {}
 
     try:
