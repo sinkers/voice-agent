@@ -231,11 +231,12 @@ async def entrypoint(ctx: JobContext) -> None:
         # Explicit set_participant in case track_subscribed fired before
         # _init_task resolved _participant_available_fut (race condition with
         # explicit dispatch). Find the first non-agent human participant.
-        if session._room_io is not None:
+        # Use public room_io property (not _room_io which is private).
+        if session.room_io is not None:
             for p in ctx.room.remote_participants.values():
                 if not p.identity.startswith("agent-"):
                     logger.info("[debug] explicit set_participant: %s", p.identity)
-                    session._room_io.set_participant(p.identity)
+                    session.room_io.set_participant(p.identity)
                     break
 
         _greeting = os.getenv("AGENT_GREETING", "")
