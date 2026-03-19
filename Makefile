@@ -111,11 +111,12 @@ smoke-test:
 # Creates a zip archive from skill/ directory contents
 build-skill:
 	@echo "==> Building OpenClaw skill package..."
-	@cd skill && rm -f livekit-voice.skill
-	@cd skill && zip -r livekit-voice.skill \
+	@cd skill && rm -f clawtalk.skill
+	@cd skill && zip -r clawtalk.skill \
 		SKILL.md \
 		scripts/*.py \
 		scripts/*.sh \
-		assets/
-	@echo "Built: skill/livekit-voice.skill"
-	@ls -lh skill/livekit-voice.skill
+		assets/ \
+		-x "*.pyc" "*__pycache__*"
+	@echo "Built: skill/clawtalk.skill"
+	@ls -lh skill/clawtalk.skill

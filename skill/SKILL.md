@@ -1,5 +1,5 @@
 ---
-name: livekit-voice
+name: clawtalk
 description: >
   Manage a LiveKit conversational voice agent. Use when the user wants to set up or install
   a voice agent for the first time, start or stop the voice agent, check voice agent status

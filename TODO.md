@@ -222,6 +222,70 @@ Last Updated: 2026-03-19 (Evening Session Complete)
 
   - **Packages needed:** `livekit-plugins-groq`, `livekit-plugins-cartesia`, `livekit-plugins-elevenlabs` — add as optional dependencies in `pyproject.toml`.
 
+- [ ] 32. Session-Scoped Call URLs: Route Each Call to the Requesting Session
+  - **Goal:** When an OpenClaw agent is asked "what's my call URL?", the generated URL should connect the voice call to **that agent's current session** — so voice and text share memory, context, and tool state — rather than the static session pinned in `.env` at startup.
+
+  - **Current problem:**
+    - `OPENCLAW_SESSION_KEY` is read once in `_create_llm()` at process startup and baked into the `AsyncOpenAI` client's `default_headers`. It cannot change without restarting the process.
+    - `generate_call_url.py` / `skill/scripts/call_url.py` generate a URL that routes to the same static session (or no session). They have no way to encode a caller-specific session key.
+    - If no session key is set, each incoming call creates a throwaway session — no memory continuity.
+
+  - **What needs to change:**
+
+  - **1 — Encode session key in the call URL JWT**
+    - `generate_call_url.py` / `call_url.py` should accept an optional `--session-key` argument.
+    - When provided, include `"session_key": "<key>"` in the JWT payload.
+    - OpenClaw calls `call_url.py --session-key <current_session_key>` when generating the URL on demand, injecting its active session into the token.
+
+  - **2 — Hub passes session key through to agent dispatch**
+    - `voice-agent-hub/backend/main.py`: when decoding the call token, extract `session_key` from the JWT payload.
+    - Pass it to the agent via LiveKit dispatch metadata (`dispatch_request.metadata` JSON field).
+
+  - **3 — Agent reads session key from dispatch metadata per-call**
+    - In `agent.py:entrypoint()`, parse `ctx.job.metadata` JSON to extract `session_key`.
+    - Create the LLM client **per-call** inside `entrypoint()` rather than at module load time, using the session key from metadata as a per-request header.
+    - Fall back to `OPENCLAW_SESSION_KEY` from `.env` if metadata contains no session key (backwards compat).
+    - The module-level `_llm` either becomes a factory or defaults to the static session; the per-call client is local to `entrypoint()`.
+
+  - **4 — SKILL.md update**
+    - Document the "what is my call URL?" intent so OpenClaw knows to pass its session key when invoking `call_url.py`.
+    - This is what makes "give me my call URL" actually connect the voice call into the current chat session.
+
+  - **Why not restart the process?**
+    - A restart interrupts all concurrent calls and forces re-registration with the hub. With multi-agent support (item 29), a single process may serve multiple concurrent callers — per-process restarts aren't viable. The session key must flow in-band per call.
+
+- [ ] 33. Refactor `agent.py` — Break Into Modules
+  - **Problem:** `agent.py` is 647 lines covering six distinct responsibilities in one flat file. It's hard to test in isolation, hard to navigate, and will only grow as items 29–32 land.
+  - **Current structure:**
+    - Lines 1–46: imports, file locking, timeout constants
+    - Lines 47–87: `HubConfig` / `HubRegisterResponse` TypedDicts
+    - Lines 88–148: `_create_llm()` — LLM client factory
+    - Lines 149–305: `VoiceAssistant`, `entrypoint()` — core agent session logic and event handlers
+    - Lines 306–474: hub API functions (`_hub_authenticate`, `_hub_get_config`, `_hub_register`, device auth polling)
+    - Lines 475–647: `HeartbeatThread`, `_start_heartbeat`, `main()` startup / registration
+
+  - **Proposed module layout:**
+    ```
+    agent/
+    ├── __main__.py        # Entry point: calls main() from startup.py
+    ├── startup.py         # main(), registration, _call_url_base wiring
+    ├── session.py         # VoiceAssistant, entrypoint(), event handlers
+    ├── llm.py             # _create_llm(), LLM client factory (incl. item 32 per-call client)
+    ├── hub.py             # _hub_authenticate, _hub_get_config, _hub_register, device auth
+    ├── heartbeat.py       # HeartbeatThread, _start_heartbeat
+    └── constants.py       # Timeout constants, type definitions (HubConfig, etc.)
+    ```
+
+  - **Rules for the refactor:**
+    - No behaviour changes — pure structural move. All existing tests must pass unmodified.
+    - Each module should be importable in isolation for testing (no circular imports).
+    - `hub.py` functions become methods on a `HubClient` class so they share `hub_url` and `token` without passing them as args to every call.
+    - `HeartbeatThread` moves to `heartbeat.py` unchanged.
+    - `session.py` imports from `llm.py` and `constants.py` only — no hub dependency at session level.
+    - Keep `agent.py` as a shim (`from agent.startup import main; main()`) during transition so existing `python agent.py dev` invocation keeps working.
+
+  - **Do this before implementing items 29–32** — the multi-agent, session-scoped, and latency work all touch `entrypoint()`, `_create_llm()`, and `_hub_register` heavily. Doing the refactor first means each of those changes lands in a focused, well-scoped file rather than further bloating the monolith.
+
 - [ ] 28. Add WebRTC-based Smoke Test
   - Current smoke tests push PCM frames directly, bypassing WebRTC
   - Creates false positives - test passes but real browser clients may fail
