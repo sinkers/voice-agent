@@ -97,6 +97,8 @@ lint:
 	uv run ruff check agent.py tests/ skill/scripts/*.py web/backend/*.py
 	@echo "==> Running ruff format check..."
 	uv run ruff format --check agent.py tests/ skill/scripts/*.py web/backend/*.py
+	@echo "==> Running mypy type checker..."
+	uv run mypy agent.py tests/ skill/scripts/ web/backend/
 	@echo "✅ All lint checks passed"
 
 # Auto-fix linting issues

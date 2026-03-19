@@ -219,7 +219,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # Track timing data for debugging (cleared on exit)
     _t: dict = {}
-    session = None
+    session: AgentSession | None = None
 
     @ctx.room.on("participant_connected")
     def _on_participant_connected(participant):
@@ -271,7 +271,7 @@ async def entrypoint(ctx: JobContext) -> None:
             vad=ctx.proc.userdata["vad"],
         )
 
-        @session.on("user_started_speaking")
+        @session.on("user_started_speaking")  # type: ignore[arg-type]
         def _on_speech_start(_evt):
             try:
                 _t["speech_start"] = time.perf_counter()
@@ -279,7 +279,7 @@ async def entrypoint(ctx: JobContext) -> None:
             except Exception as exc:
                 logger.exception("Error in user_started_speaking handler: %s", exc)
 
-        @session.on("user_stopped_speaking")
+        @session.on("user_stopped_speaking")  # type: ignore[arg-type]
         def _on_speech_end(_evt):
             try:
                 if "speech_start" in _t:
@@ -303,7 +303,7 @@ async def entrypoint(ctx: JobContext) -> None:
             except Exception as exc:
                 logger.exception("Error in user_input_transcribed handler: %s", exc)
 
-        @session.on("agent_started_speaking")
+        @session.on("agent_started_speaking")  # type: ignore[arg-type]
         def _on_agent_speak(_evt):
             try:
                 _t["tts_start"] = time.perf_counter()
@@ -317,7 +317,7 @@ async def entrypoint(ctx: JobContext) -> None:
             except Exception as exc:
                 logger.exception("Error in agent_started_speaking handler: %s", exc)
 
-        @session.on("agent_stopped_speaking")
+        @session.on("agent_stopped_speaking")  # type: ignore[arg-type]
         def _on_agent_done(_evt):
             try:
                 if "tts_start" in _t:
@@ -326,14 +326,14 @@ async def entrypoint(ctx: JobContext) -> None:
             except Exception as exc:
                 logger.exception("Error in agent_stopped_speaking handler: %s", exc)
 
-        @session.on("input_speech_started")
+        @session.on("input_speech_started")  # type: ignore[arg-type]
         def _dbg_input(_evt):
             try:
                 logger.info("[AUDIO] 🎙️ Input speech started (VAD detected audio)")
             except Exception as exc:
                 logger.exception("Error in input_speech_started handler: %s", exc)
 
-        @session.on("agent_speech_committed")
+        @session.on("agent_speech_committed")  # type: ignore[arg-type]
         def _on_agent_speech_committed(evt):
             try:
                 logger.info("[AUDIO] 💬 Agent response committed - generating TTS audio")
@@ -557,7 +557,7 @@ class HeartbeatThread:
         self.hub_url = hub_url
         self.token_getter = token_getter
         self.shutdown_event = threading.Event()
-        self.thread = None
+        self.thread: threading.Thread | None = None
         self.failure_count = 0
         self.max_failures = 10  # Stop logging after this many consecutive failures
 
@@ -690,7 +690,7 @@ if __name__ == "__main__":
     for _cfg_key, _env_key in _key_map.items():
         _val = _config.get(_cfg_key, "")
         if _val:
-            os.environ[_env_key] = _val
+            os.environ[_env_key] = str(_val)
 
     _call_url_base = _hub_register(_hub_url, _hub_token, _agent_name, _display_name, _config, _base_name)
 
