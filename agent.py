@@ -235,21 +235,36 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
 
 def _hub_get_config(hub_url: str, token: str, base_name: str) -> dict:
     """Fetch agent config from hub. Returns config dict.
-    Raises ValueError if token is invalid (caller should re-auth)."""
+    Raises ValueError if token is invalid (caller should re-auth).
+    Raises RuntimeError for network errors, timeouts, non-401 HTTP errors, or bad JSON."""
     _here = os.path.dirname(os.path.abspath(__file__))
-    with httpx.Client(timeout=30.0) as client:
-        resp = client.get(
-            f"{hub_url}/agent/config",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.get(
+                f"{hub_url}/agent/config",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.TimeoutException as exc:
+        raise RuntimeError(f"Hub request timed out: {exc}") from exc
+    except httpx.ConnectError as exc:
+        raise RuntimeError(f"Failed to connect to hub at {hub_url}: {exc}") from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Hub request failed: {exc}") from exc
+
     if resp.status_code == 401:
         # Token expired — delete it so next call triggers re-auth
         token_file = os.path.join(_here, f".hub-token-{base_name}")
         if os.path.exists(token_file):
             os.remove(token_file)
         raise ValueError("hub token invalid or expired")
-    resp.raise_for_status()
-    return resp.json()
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(f"Hub returned HTTP {resp.status_code}: {resp.text}") from exc
+    try:
+        return resp.json()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to parse hub response: {resp.text!r}") from exc
 
 
 def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, config: dict, base_name: str) -> str:
