@@ -255,11 +255,7 @@ async def entrypoint(ctx: JobContext) -> None:
         )
 
         logger.info("Agent ready in room: %s", ctx.room.name)
-        if session.input.audio:
-            logger.info("[debug] session.input.audio.participant=%s source=%s",
-                        session.input.audio.participant, session.input.audio.source)
-        else:
-            logger.info("[debug] session.input.audio=None")
+        logger.info("[debug] session.input.audio=%r", session.input.audio)
         logger.info("[debug] room participants: %r",
                     list(ctx.room.remote_participants.keys()))
 
