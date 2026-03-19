@@ -23,7 +23,12 @@ from livekit.agents import (
 from livekit.agents import RoomInputOptions
 from livekit.plugins import deepgram, openai, silero
 
-_SECONDS_IN_A_DAY = 86400
+# Timeout constants (in seconds)
+LLM_STREAMING_READ_TIMEOUT = 60.0  # Max time for LLM to stream a response
+HUB_REQUEST_TIMEOUT = 30.0  # Default timeout for hub HTTP requests
+HUB_HEARTBEAT_TIMEOUT = 10.0  # Timeout for individual heartbeat requests
+HUB_HEARTBEAT_INTERVAL = 30.0  # Time between heartbeat requests
+HUB_DEVICE_AUTH_POLL_INTERVAL = 3.0  # Time between device auth polls
 
 logger = logging.getLogger("voice-agent")
 
@@ -60,7 +65,7 @@ def _create_llm() -> openai.LLM:
         base_url=url,
         api_key=token,
         default_headers=headers,
-        timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0),
+        timeout=httpx.Timeout(connect=10.0, read=LLM_STREAMING_READ_TIMEOUT, write=10.0, pool=10.0),
     )
     return openai.LLM(client=client, model=f"openclaw:{agent_id}")
 
@@ -220,7 +225,7 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
             return token
 
     # Device-code flow
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
         resp = client.post(f"{hub_url}/auth/device")
         resp.raise_for_status()
         data = resp.json()
@@ -234,8 +239,8 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
 
     deadline = time.time() + expires_in
     while time.time() < deadline:
-        time.sleep(3)
-        with httpx.Client(timeout=30.0) as client:
+        time.sleep(HUB_DEVICE_AUTH_POLL_INTERVAL)
+        with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
             resp = client.get(f"{hub_url}/auth/device/token", params={"code": device_code})
             resp.raise_for_status()
             result = resp.json()
@@ -264,7 +269,7 @@ def _hub_get_config(hub_url: str, token: str, base_name: str) -> dict:
     """Fetch agent config from hub. Returns config dict.
     Raises ValueError if token is invalid (caller should re-auth)."""
     _here = os.path.dirname(os.path.abspath(__file__))
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
         resp = client.get(
             f"{hub_url}/agent/config",
             headers={"Authorization": f"Bearer {token}"},
@@ -282,7 +287,7 @@ def _hub_get_config(hub_url: str, token: str, base_name: str) -> dict:
 def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, config: dict, base_name: str) -> str:
     """Register agent with hub, persist agent_id, return call_url_base."""
     _here = os.path.dirname(os.path.abspath(__file__))
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
         resp = client.post(
             f"{hub_url}/agent/register",
             headers={"Authorization": f"Bearer {token}"},
@@ -309,16 +314,16 @@ def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, 
 
 
 def _start_heartbeat(hub_url: str, token: str) -> None:
-    """Start a daemon thread that sends heartbeats every 30 seconds."""
+    """Start a daemon thread that sends heartbeats every HUB_HEARTBEAT_INTERVAL seconds."""
     def _loop():
         while True:
-            time.sleep(30)
+            time.sleep(HUB_HEARTBEAT_INTERVAL)
             try:
-                with httpx.Client(timeout=30.0) as client:
+                with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
                     client.post(
                         f"{hub_url}/agent/heartbeat",
                         headers={"Authorization": f"Bearer {token}"},
-                        timeout=10,
+                        timeout=HUB_HEARTBEAT_TIMEOUT,
                     )
             except Exception as exc:
                 logger.warning("Heartbeat failed: %s", exc)
