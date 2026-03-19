@@ -266,10 +266,18 @@ def test_greeting(agent_id: str, display_name: str) -> None:
 
 async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
     """
-    Connect to a fresh room. Wait for the greeting to finish (agent has
-    subscribed to our track by then), then publish the question and collect
-    the response.
+    Connect to a fresh room. Wait for the agent's greeting to start, then
+    wait a fixed window for it to finish before publishing the question and
+    collecting the response.
+
+    Strategy for greeting detection:
+      1. Wait up to 20s for agent to start speaking (first non-silent frame).
+      2. Once speech starts, wait GREETING_TAIL_S more seconds for it to
+         finish — this is simpler and more reliable than silence counting,
+         which is fragile over LiveKit's continuous silent-frame stream.
     """
+    GREETING_TAIL_S = 6.0   # seconds to wait after greeting starts before asking
+
     conn = await _connect_async(agent_id)
     assert conn["token"], "No LiveKit token"
     assert conn["url"].startswith("wss://"), f"Bad url: {conn['url']}"
@@ -278,43 +286,34 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
 
     room = rtc.Room()
     agent_frames: list = []
-    greeting_done = asyncio.Event()
-    agent_speaking = asyncio.Event()
-    greeting_collected = False
+    greeting_started = asyncio.Event()
+    collecting = False   # only True after question is fully published
 
     @room.on("track_subscribed")
     def on_track(track, pub, participant):
         if track.kind == rtc.TrackKind.KIND_AUDIO and participant.identity != "caller":
             stream = rtc.AudioStream(track)
             async def collect():
-                nonlocal greeting_collected
-                silence_count = 0
                 async for fe in stream:
                     raw = bytes(fe.frame.data)
                     is_speech = any(b != 0 for b in raw[::50])
-                    if not greeting_done.is_set():
-                        # Wait for greeting to finish (sustained silence after initial speech)
-                        if is_speech:
-                            silence_count = 0
-                        else:
-                            silence_count += 1
-                            if silence_count > 50:  # ~1s of silence = greeting done
-                                greeting_done.set()
-                    else:
-                        # Collecting response
-                        if is_speech:
-                            agent_frames.append(fe.frame)
-                            agent_speaking.set()
+                    if is_speech and not greeting_started.is_set():
+                        greeting_started.set()
+                    if collecting and is_speech:
+                        agent_frames.append(fe.frame)
             asyncio.ensure_future(collect())
 
     await room.connect(conn["url"], conn["token"])
 
-    # Wait for greeting to finish
+    # Phase 1: wait for greeting to start
     try:
-        await asyncio.wait_for(greeting_done.wait(), timeout=20.0)
+        await asyncio.wait_for(greeting_started.wait(), timeout=20.0)
     except asyncio.TimeoutError:
         await room.disconnect()
-        raise RuntimeError("Greeting did not complete within 20s")
+        raise RuntimeError("Agent did not start greeting within 20s — is the agent worker running?")
+
+    # Phase 2: fixed tail — let the greeting finish
+    await asyncio.sleep(GREETING_TAIL_S)
 
     # Now publish the question — agent has subscribed to our track by now
     source = rtc.AudioSource(sample_rate=48000, num_channels=1)
@@ -324,6 +323,13 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
 
     # Small delay to ensure agent has subscribed to our newly published track
     await asyncio.sleep(1.0)
+
+    # Start collecting agent response frames now — before we push the question
+    # audio. The agent may begin responding partway through (or very shortly
+    # after) we finish publishing, so we must not delay setting this flag.
+    # collect() only captures non-caller audio so there's no risk of picking
+    # up our own mic track.
+    collecting = True
 
     # Push PCM frames
     chunk_bytes = 960
@@ -335,17 +341,19 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
         await source.capture_frame(frame)
         await asyncio.sleep(0.01)
 
-    # Wait for response
-    try:
-        await asyncio.wait_for(agent_speaking.wait(), timeout=20.0)
-    except asyncio.TimeoutError:
-        await room.disconnect()
-        raise RuntimeError("Agent did not respond to question within 20s")
+    # Wait for response frames to arrive (up to 20s)
+    deadline = asyncio.get_event_loop().time() + 20.0
+    while not agent_frames:
+        if asyncio.get_event_loop().time() >= deadline:
+            await room.disconnect()
+            raise RuntimeError("Agent did not respond to question within 20s")
+        await asyncio.sleep(0.5)
 
-    # Drain silence
+    # Drain: wait until frames stop arriving (max 15s)
     last_len = len(agent_frames)
-    for _ in range(10):
-        await asyncio.sleep(1.0)
+    drain_deadline = asyncio.get_event_loop().time() + 15.0
+    while asyncio.get_event_loop().time() < drain_deadline:
+        await asyncio.sleep(2.0)
         if len(agent_frames) == last_len:
             break
         last_len = len(agent_frames)
