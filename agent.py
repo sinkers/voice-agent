@@ -534,14 +534,30 @@ if __name__ == "__main__":
 
     _hub_token = _hub_authenticate(_hub_url, _base_name)
 
+    # Try to get config from hub (may not exist on first run)
+    _config = None
     try:
         _config = _hub_get_config(_hub_url, _hub_token, _base_name)
     except ValueError:
         # Token was invalid; re-authenticate once
         _hub_token = _hub_authenticate(_hub_url, _base_name)
         _config = _hub_get_config(_hub_url, _hub_token, _base_name)
+    except RuntimeError as exc:
+        # If agent not registered yet (404), use .env values as initial config
+        if "404" in str(exc) and "No agent registered" in str(exc):
+            print("[agent] First run detected - using .env credentials for initial registration")
+            _config = {
+                "livekit_url": os.getenv("LIVEKIT_URL", ""),
+                "livekit_api_key": os.getenv("LIVEKIT_API_KEY", ""),
+                "livekit_api_secret": os.getenv("LIVEKIT_API_SECRET", ""),
+                "deepgram_api_key": os.getenv("DEEPGRAM_API_KEY", ""),
+                "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
+            }
+        else:
+            # Other errors should still fail
+            raise
 
-    # Hub keys are authoritative — override any .env values
+    # Hub keys are authoritative — override any .env values (if hub returned config)
     _key_map = {
         "livekit_url": "LIVEKIT_URL",
         "livekit_api_key": "LIVEKIT_API_KEY",
