@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import secrets
 import uuid
 from contextlib import asynccontextmanager
@@ -11,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from livekit.api import AccessToken, CreateAgentDispatchRequest, LiveKitAPI, VideoGrants
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, ConfigDict
 
 load_dotenv()
 
@@ -37,6 +38,13 @@ CONFIG_SECRET = os.environ.get("CONFIG_SECRET", "")
 _cors_origins = os.environ.get("CORS_ORIGINS", "*")
 cors_origins = [o.strip() for o in _cors_origins.split(",")] if _cors_origins != "*" else ["*"]
 
+# Input validation patterns
+# Allow alphanumeric, hyphens, underscores (no special chars that could break systems)
+SAFE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+MAX_NAME_LENGTH = 100
+MAX_ROOM_NAME_LENGTH = 64
+MAX_IDENTITY_LENGTH = 64
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -55,14 +63,73 @@ app.add_middleware(
 
 
 class TokenRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     room_name: str
     identity: str
     agent_id: str
 
+    @field_validator("room_name")
+    @classmethod
+    def validate_room_name(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("room_name cannot be empty")
+        if len(v) > MAX_ROOM_NAME_LENGTH:
+            raise ValueError(f"room_name too long (max {MAX_ROOM_NAME_LENGTH} chars)")
+        if not SAFE_NAME_PATTERN.match(v):
+            raise ValueError("room_name contains invalid characters (use alphanumeric, hyphens, underscores only)")
+        return v
+
+    @field_validator("identity")
+    @classmethod
+    def validate_identity(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("identity cannot be empty")
+        if len(v) > MAX_IDENTITY_LENGTH:
+            raise ValueError(f"identity too long (max {MAX_IDENTITY_LENGTH} chars)")
+        if not SAFE_NAME_PATTERN.match(v):
+            raise ValueError("identity contains invalid characters (use alphanumeric, hyphens, underscores only)")
+        return v
+
+    @field_validator("agent_id")
+    @classmethod
+    def validate_agent_id(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("agent_id cannot be empty")
+        if len(v) > MAX_NAME_LENGTH:
+            raise ValueError(f"agent_id too long (max {MAX_NAME_LENGTH} chars)")
+        if not SAFE_NAME_PATTERN.match(v):
+            raise ValueError("agent_id contains invalid characters (use alphanumeric, hyphens, underscores only)")
+        return v
+
 
 class DispatchRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     room_name: str
     agent_name: str
+
+    @field_validator("room_name")
+    @classmethod
+    def validate_room_name(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("room_name cannot be empty")
+        if len(v) > MAX_ROOM_NAME_LENGTH:
+            raise ValueError(f"room_name too long (max {MAX_ROOM_NAME_LENGTH} chars)")
+        if not SAFE_NAME_PATTERN.match(v):
+            raise ValueError("room_name contains invalid characters (use alphanumeric, hyphens, underscores only)")
+        return v
+
+    @field_validator("agent_name")
+    @classmethod
+    def validate_agent_name(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("agent_name cannot be empty")
+        if len(v) > MAX_NAME_LENGTH:
+            raise ValueError(f"agent_name too long (max {MAX_NAME_LENGTH} chars)")
+        if not SAFE_NAME_PATTERN.match(v):
+            raise ValueError("agent_name contains invalid characters (use alphanumeric, hyphens, underscores only)")
+        return v
 
 
 @app.get("/agents")
@@ -112,14 +179,41 @@ async def connect_with_token(req: ConnectRequest):
         raise HTTPException(status_code=401, detail="Invalid config token")
 
     agent_name = payload.get("agent_name")
-    display_name = payload.get("display_name", agent_name)
     if not agent_name:
         raise HTTPException(status_code=400, detail="Config token missing agent_name")
+
+    # Validate agent_name
+    if not isinstance(agent_name, str) or not agent_name.strip():
+        raise HTTPException(status_code=400, detail="agent_name must be a non-empty string")
+    if len(agent_name) > MAX_NAME_LENGTH:
+        raise HTTPException(status_code=400, detail=f"agent_name too long (max {MAX_NAME_LENGTH} chars)")
+    if not SAFE_NAME_PATTERN.match(agent_name):
+        raise HTTPException(status_code=400, detail="agent_name contains invalid characters")
+
+    # Validate display_name
+    display_name = payload.get("display_name", agent_name)
+    if display_name:
+        if not isinstance(display_name, str):
+            display_name = str(display_name)
+        if len(display_name) > MAX_NAME_LENGTH:
+            raise HTTPException(status_code=400, detail=f"display_name too long (max {MAX_NAME_LENGTH} chars)")
 
     # Use per-token LiveKit creds if provided, otherwise fall back to server defaults
     lk_url = payload.get("livekit_url") or LIVEKIT_URL
     lk_key = payload.get("livekit_api_key") or LIVEKIT_API_KEY
     lk_secret = payload.get("livekit_api_secret") or LIVEKIT_API_SECRET
+
+    # Validate LiveKit URL format
+    if not lk_url or not isinstance(lk_url, str):
+        raise HTTPException(status_code=400, detail="Invalid livekit_url")
+    if not (lk_url.startswith("ws://") or lk_url.startswith("wss://") or lk_url.startswith("http://") or lk_url.startswith("https://")):
+        raise HTTPException(status_code=400, detail="livekit_url must be a valid WebSocket or HTTP URL")
+
+    # Validate API credentials are non-empty strings
+    if not lk_key or not isinstance(lk_key, str) or not lk_key.strip():
+        raise HTTPException(status_code=400, detail="Invalid livekit_api_key")
+    if not lk_secret or not isinstance(lk_secret, str) or not lk_secret.strip():
+        raise HTTPException(status_code=400, detail="Invalid livekit_api_secret")
 
     room_name = f"room-{uuid.uuid4().hex[:12]}"
     identity = f"user-{uuid.uuid4().hex[:8]}"

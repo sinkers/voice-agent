@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import atexit
+import contextlib
 import logging
 import os
+import platform
 import threading
 import time
 import uuid
 
 import httpx
 from dotenv import load_dotenv
+
+# Platform-specific file locking
+_IS_WINDOWS = platform.system() == "Windows"
+if not _IS_WINDOWS:
+    import fcntl
+else:
+    import msvcrt
 
 load_dotenv()
 
@@ -31,6 +41,31 @@ HUB_HEARTBEAT_INTERVAL = 30.0  # Time between heartbeat requests
 HUB_DEVICE_AUTH_POLL_INTERVAL = 3.0  # Time between device auth polls
 
 logger = logging.getLogger("voice-agent")
+
+
+@contextlib.contextmanager
+def _file_lock(file_obj):
+    """Context manager for file locking (cross-platform).
+
+    Args:
+        file_obj: Open file object to lock
+
+    Yields:
+        The locked file object
+    """
+    try:
+        if _IS_WINDOWS:
+            # Windows: lock using msvcrt
+            msvcrt.locking(file_obj.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            # Unix: lock using fcntl
+            fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX)
+        yield file_obj
+    finally:
+        if _IS_WINDOWS:
+            msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
 
 def _create_llm() -> openai.LLM:
     """Create the LLM client.
@@ -105,21 +140,38 @@ async def entrypoint(ctx: JobContext) -> None:
     _t: dict = {}
     session = None
 
+    @ctx.room.on("participant_connected")
+    def _on_participant_connected(participant):
+        try:
+            logger.info("[AUDIO] 🟢 Participant connected: %s", participant.identity)
+        except Exception as exc:
+            logger.exception("Error in participant_connected handler: %s", exc)
+
     @ctx.room.on("track_subscribed")
     def _dbg_track(track, pub, participant):
         try:
-            logger.info("[debug] track_subscribed: kind=%s source=%s participant=%s",
+            from livekit import rtc
+            logger.info("[AUDIO] 🎧 Track subscribed: kind=%s source=%s participant=%s",
                         track.kind, pub.source, participant.identity)
+            if track.kind == rtc.TrackKind.KIND_AUDIO:
+                logger.info("[AUDIO] ✅ AUDIO TRACK READY - should receive audio frames now")
         except Exception as exc:
             logger.exception("Error in track_subscribed handler: %s", exc)
 
     @ctx.room.on("track_published")
     def _dbg_pub(pub, participant):
         try:
-            logger.info("[debug] track_published: source=%s participant=%s subscribed=%s",
+            logger.info("[AUDIO] 📢 Track published: source=%s participant=%s subscribed=%s",
                         pub.source, participant.identity, pub.subscribed)
         except Exception as exc:
             logger.exception("Error in track_published handler: %s", exc)
+
+    @ctx.room.on("track_unsubscribed")
+    def _on_track_unsubscribed(track, pub, participant):
+        try:
+            logger.info("[AUDIO] ❌ Track unsubscribed: kind=%s participant=%s", track.kind, participant.identity)
+        except Exception as exc:
+            logger.exception("Error in track_unsubscribed handler: %s", exc)
 
     try:
         session = AgentSession(
@@ -133,6 +185,7 @@ async def entrypoint(ctx: JobContext) -> None:
         def _on_speech_start(_evt):
             try:
                 _t["speech_start"] = time.perf_counter()
+                logger.info("[AUDIO] 🎤 User started speaking (VAD detected speech)")
             except Exception as exc:
                 logger.exception("Error in user_started_speaking handler: %s", exc)
 
@@ -141,7 +194,8 @@ async def entrypoint(ctx: JobContext) -> None:
             try:
                 if "speech_start" in _t:
                     _t["speech_end"] = time.perf_counter()
-                    logger.info("[timing] speech=%.3fs", _t["speech_end"] - _t["speech_start"])
+                    duration = _t["speech_end"] - _t["speech_start"]
+                    logger.info("[AUDIO] 🎤 User stopped speaking (duration: %.3fs) - sending to STT", duration)
             except Exception as exc:
                 logger.exception("Error in user_stopped_speaking handler: %s", exc)
 
@@ -150,9 +204,12 @@ async def entrypoint(ctx: JobContext) -> None:
             try:
                 _t["stt_done"] = time.perf_counter()
                 ref = _t.get("speech_end") or _t.get("speech_start")
+                transcript = getattr(evt, "transcript", "")
                 if ref:
-                    logger.info("[timing] stt_latency=%.3fs transcript=%r",
-                                _t["stt_done"] - ref, getattr(evt, "transcript", ""))
+                    stt_latency = _t["stt_done"] - ref
+                    logger.info("[AUDIO] 📝 STT transcribed (%.3fs): %r - sending to LLM", stt_latency, transcript)
+                else:
+                    logger.info("[AUDIO] 📝 STT transcribed: %r - sending to LLM", transcript)
             except Exception as exc:
                 logger.exception("Error in user_input_transcribed handler: %s", exc)
 
@@ -161,8 +218,10 @@ async def entrypoint(ctx: JobContext) -> None:
             try:
                 _t["tts_start"] = time.perf_counter()
                 if "stt_done" in _t:
-                    logger.info("[timing] stt_to_audio=%.3fs (LLM+TTS)",
-                                _t["tts_start"] - _t["stt_done"])
+                    llm_tts_time = _t["tts_start"] - _t["stt_done"]
+                    logger.info("[AUDIO] 🔊 Agent started speaking (LLM+TTS took %.3fs) - playing audio to room", llm_tts_time)
+                else:
+                    logger.info("[AUDIO] 🔊 Agent started speaking - playing audio to room")
             except Exception as exc:
                 logger.exception("Error in agent_started_speaking handler: %s", exc)
 
@@ -170,17 +229,24 @@ async def entrypoint(ctx: JobContext) -> None:
         def _on_agent_done(_evt):
             try:
                 if "tts_start" in _t:
-                    logger.info("[timing] agent_speaking=%.3fs",
-                                time.perf_counter() - _t["tts_start"])
+                    speak_duration = time.perf_counter() - _t["tts_start"]
+                    logger.info("[AUDIO] ✅ Agent finished speaking (duration: %.3fs)", speak_duration)
             except Exception as exc:
                 logger.exception("Error in agent_stopped_speaking handler: %s", exc)
 
         @session.on("input_speech_started")
         def _dbg_input(_evt):
             try:
-                logger.info("[debug] input_speech_started fired")
+                logger.info("[AUDIO] 🎙️ Input speech started (VAD detected audio)")
             except Exception as exc:
                 logger.exception("Error in input_speech_started handler: %s", exc)
+
+        @session.on("agent_speech_committed")
+        def _on_agent_speech_committed(evt):
+            try:
+                logger.info("[AUDIO] 💬 Agent response committed - generating TTS audio")
+            except Exception as exc:
+                logger.exception("Error in agent_speech_committed handler: %s", exc)
 
         await session.start(
             agent=VoiceAssistant(),
@@ -196,16 +262,20 @@ async def entrypoint(ctx: JobContext) -> None:
         # Explicit set_participant in case track_subscribed fired before
         # _init_task resolved _participant_available_fut (race condition with
         # explicit dispatch). Find the first non-agent human participant.
-        if session._room_io is not None:
+        # Use public room_io property (not _room_io which is private).
+        if session.room_io is not None:
             for p in ctx.room.remote_participants.values():
                 if not p.identity.startswith("agent-"):
                     logger.info("[debug] explicit set_participant: %s", p.identity)
-                    session._room_io.set_participant(p.identity)
+                    session.room_io.set_participant(p.identity)
                     break
 
         _greeting = os.getenv("AGENT_GREETING", "")
         if _greeting:
+            logger.info("[AUDIO] 📣 Playing greeting: %r", _greeting)
             await session.say(_greeting)
+            logger.info("[AUDIO] 🔊 Greeting completed")
+
     except Exception:
         logger.exception("Agent failed to start")
         raise
@@ -227,10 +297,11 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
 
     if os.path.exists(token_file):
         try:
-            with open(token_file) as f:
-                token = f.read().strip()
-            if token:
-                return token
+            with open(token_file, "r+") as f:
+                with _file_lock(f):
+                    token = f.read().strip()
+                    if token:
+                        return token
         except OSError as exc:
             logger.warning("Failed to read token file, will re-authenticate: %s", exc)
 
@@ -271,10 +342,17 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
             token = result["token"]
             _here = os.path.dirname(os.path.abspath(__file__))
             token_path = os.path.join(_here, f".hub-token-{base_name}")
-            with open(token_path, "w") as f:
-                f.write(token)
-            # Set secure permissions (owner read/write only)
-            os.chmod(token_path, 0o600)
+            # Use atomic write: write to temp file, then rename
+            temp_path = f"{token_path}.tmp"
+            with open(temp_path, "w") as f:
+                with _file_lock(f):
+                    f.write(token)
+                    f.flush()
+                    os.fsync(f.fileno())  # Ensure written to disk
+            # Set secure permissions before making visible
+            os.chmod(temp_path, 0o600)
+            # Atomic rename (overwrites existing file)
+            os.replace(temp_path, token_path)
             return token
 
         status = result.get("status", "")
@@ -361,32 +439,101 @@ def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, 
     if "agent_id" not in data or "call_url_base" not in data:
         raise RuntimeError(f"Hub registration response missing required fields: {data}")
 
+    # Write agent ID atomically
     agent_id_file = os.path.join(_here, f".hub-agent-id-{base_name}")
-    with open(agent_id_file, "w") as f:
-        f.write(data["agent_id"])
-    # Set secure permissions (owner read/write only)
-    os.chmod(agent_id_file, 0o600)
+    temp_path = f"{agent_id_file}.tmp"
+    with open(temp_path, "w") as f:
+        with _file_lock(f):
+            f.write(data["agent_id"])
+            f.flush()
+            os.fsync(f.fileno())
+    # Set secure permissions before making visible
+    os.chmod(temp_path, 0o600)
+    os.replace(temp_path, agent_id_file)
 
     return data["call_url_base"]
 
 
-def _start_heartbeat(hub_url: str, token: str) -> None:
-    """Start a daemon thread that sends heartbeats every HUB_HEARTBEAT_INTERVAL seconds."""
-    def _loop():
-        while True:
-            time.sleep(HUB_HEARTBEAT_INTERVAL)
+class HeartbeatThread:
+    """Manages periodic heartbeat requests to the hub in a background thread."""
+
+    def __init__(self, hub_url: str, token_getter: callable):
+        """Initialize heartbeat thread.
+
+        Args:
+            hub_url: Base URL of the hub
+            token_getter: Callable that returns the current auth token (allows refreshing)
+        """
+        self.hub_url = hub_url
+        self.token_getter = token_getter
+        self.shutdown_event = threading.Event()
+        self.thread = None
+        self.failure_count = 0
+        self.max_failures = 10  # Stop logging after this many consecutive failures
+
+    def _loop(self):
+        """Background thread loop that sends heartbeats."""
+        while not self.shutdown_event.is_set():
+            # Use wait() instead of sleep() so shutdown is responsive
+            if self.shutdown_event.wait(timeout=HUB_HEARTBEAT_INTERVAL):
+                break  # Shutdown requested
+
             try:
+                token = self.token_getter()
                 with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
-                    client.post(
-                        f"{hub_url}/agent/heartbeat",
+                    resp = client.post(
+                        f"{self.hub_url}/agent/heartbeat",
                         headers={"Authorization": f"Bearer {token}"},
                         timeout=HUB_HEARTBEAT_TIMEOUT,
                     )
+                    resp.raise_for_status()
+                # Reset failure count on success
+                if self.failure_count > 0:
+                    logger.info("Heartbeat recovered after %d failures", self.failure_count)
+                    self.failure_count = 0
             except Exception as exc:
-                logger.warning("Heartbeat failed: %s", exc)
+                self.failure_count += 1
+                if self.failure_count <= self.max_failures:
+                    logger.warning("Heartbeat failed (#%d): %s", self.failure_count, exc)
+                elif self.failure_count == self.max_failures + 1:
+                    logger.error("Heartbeat failing repeatedly, suppressing further warnings")
 
-    t = threading.Thread(target=_loop, daemon=True)
-    t.start()
+    def start(self):
+        """Start the heartbeat thread."""
+        if self.thread is not None:
+            logger.warning("Heartbeat thread already started")
+            return
+        self.thread = threading.Thread(target=self._loop, daemon=True, name="HeartbeatThread")
+        self.thread.start()
+        logger.info("Heartbeat thread started")
+
+    def stop(self, timeout=5.0):
+        """Stop the heartbeat thread gracefully.
+
+        Args:
+            timeout: Max seconds to wait for thread to stop
+        """
+        if self.thread is None:
+            return
+        logger.info("Stopping heartbeat thread...")
+        self.shutdown_event.set()
+        self.thread.join(timeout=timeout)
+        if self.thread.is_alive():
+            logger.warning("Heartbeat thread did not stop within %s seconds", timeout)
+        else:
+            logger.info("Heartbeat thread stopped")
+        self.thread = None
+
+
+def _start_heartbeat(hub_url: str, token: str) -> HeartbeatThread:
+    """Start a daemon thread that sends heartbeats every HUB_HEARTBEAT_INTERVAL seconds.
+
+    Returns the HeartbeatThread instance for shutdown control."""
+    # Use a lambda to allow token to be updated if needed
+    # (though in current implementation it's static)
+    heartbeat = HeartbeatThread(hub_url, lambda: token)
+    heartbeat.start()
+    return heartbeat
 
 
 if __name__ == "__main__":
@@ -396,14 +543,20 @@ if __name__ == "__main__":
     # Persist instance ID across restarts
     _id_file = os.path.join(_here, f".agent-instance-id-{_base_name}")
     if os.path.exists(_id_file):
-        with open(_id_file) as f:
-            _instance_id = f.read().strip()
+        with open(_id_file, "r") as f:
+            with _file_lock(f):
+                _instance_id = f.read().strip()
     else:
         _instance_id = uuid.uuid4().hex[:8]
-        with open(_id_file, "w") as f:
-            f.write(_instance_id)
-        # Set secure permissions (owner read/write only)
-        os.chmod(_id_file, 0o600)
+        temp_path = f"{_id_file}.tmp"
+        with open(temp_path, "w") as f:
+            with _file_lock(f):
+                f.write(_instance_id)
+                f.flush()
+                os.fsync(f.fileno())
+        # Set secure permissions before making visible
+        os.chmod(temp_path, 0o600)
+        os.replace(temp_path, _id_file)
 
     _agent_name = f"{_base_name}-{_instance_id}"
     _display_name = os.getenv("OPENCLAW_AGENT_DISPLAY_NAME", _base_name.replace("-", " ").title())
@@ -415,14 +568,30 @@ if __name__ == "__main__":
 
     _hub_token = _hub_authenticate(_hub_url, _base_name)
 
+    # Try to get config from hub (may not exist on first run)
+    _config = None
     try:
         _config = _hub_get_config(_hub_url, _hub_token, _base_name)
     except ValueError:
         # Token was invalid; re-authenticate once
         _hub_token = _hub_authenticate(_hub_url, _base_name)
         _config = _hub_get_config(_hub_url, _hub_token, _base_name)
+    except RuntimeError as exc:
+        # If agent not registered yet (404), use .env values as initial config
+        if "404" in str(exc) and "No agent registered" in str(exc):
+            print("[agent] First run detected - using .env credentials for initial registration")
+            _config = {
+                "livekit_url": os.getenv("LIVEKIT_URL", ""),
+                "livekit_api_key": os.getenv("LIVEKIT_API_KEY", ""),
+                "livekit_api_secret": os.getenv("LIVEKIT_API_SECRET", ""),
+                "deepgram_api_key": os.getenv("DEEPGRAM_API_KEY", ""),
+                "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
+            }
+        else:
+            # Other errors should still fail
+            raise
 
-    # Hub keys are authoritative — override any .env values
+    # Hub keys are authoritative — override any .env values (if hub returned config)
     _key_map = {
         "livekit_url": "LIVEKIT_URL",
         "livekit_api_key": "LIVEKIT_API_KEY",
@@ -436,9 +605,17 @@ if __name__ == "__main__":
             os.environ[_env_key] = _val
 
     _call_url_base = _hub_register(_hub_url, _hub_token, _agent_name, _display_name, _config, _base_name)
-    print(f"[agent] Call URL: {_call_url_base}")
 
-    _start_heartbeat(_hub_url, _hub_token)
+    # Print call URL prominently for easy testing
+    print("\n" + "=" * 80)
+    print("🎤 VOICE AGENT READY")
+    print("=" * 80)
+    print(f"\n📞 Call URL (for testing):\n   {_call_url_base}\n")
+    print("=" * 80 + "\n")
+
+    # Start heartbeat thread and register shutdown handler
+    _heartbeat = _start_heartbeat(_hub_url, _hub_token)
+    atexit.register(_heartbeat.stop)
 
     _port = int(os.getenv("AGENT_HTTP_PORT", "8081"))
 

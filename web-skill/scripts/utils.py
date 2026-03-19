@@ -211,10 +211,38 @@ def install_flyctl() -> bool:
         print("  Skipped. Install flyctl manually: https://fly.io/docs/hands-on/install-flyctl/")
         return False
 
-    result = subprocess.run(["sh", "-c", "curl -L https://fly.io/install.sh | sh"])
-    if result.returncode == 0:
-        # Add to PATH for this session
-        fly_bin_dir = Path.home() / ".fly" / "bin"
-        os.environ["PATH"] = f"{fly_bin_dir}{os.pathsep}{os.environ['PATH']}"
-        return True
-    return False
+    # Download install script to temp file (safer than shell piping)
+    install_url = "https://fly.io/install.sh"
+    try:
+        with tempfile.NamedTemporaryFile(mode='wb', suffix='.sh', delete=False) as tmp:
+            tmp_path = tmp.name
+            print(f"  Downloading {install_url}...")
+            # Use curl to download to file
+            download_result = subprocess.run(
+                ["curl", "-fsSL", "-o", tmp_path, install_url],
+                capture_output=True
+            )
+            if download_result.returncode != 0:
+                print(err(f"Failed to download install script: {download_result.stderr.decode()}"))
+                os.unlink(tmp_path)
+                return False
+
+        # Execute the downloaded script (no shell piping)
+        print("  Running install script...")
+        result = subprocess.run(["sh", tmp_path])
+        os.unlink(tmp_path)  # Clean up temp file
+
+        if result.returncode == 0:
+            # Add to PATH for this session
+            fly_bin_dir = Path.home() / ".fly" / "bin"
+            os.environ["PATH"] = f"{fly_bin_dir}{os.pathsep}{os.environ['PATH']}"
+            return True
+        return False
+    except Exception as e:
+        print(err(f"Install failed: {e}"))
+        if 'tmp_path' in locals():
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return False
