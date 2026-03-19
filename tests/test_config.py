@@ -38,6 +38,7 @@ def _reload(monkeypatch, overrides: dict[str, str]) -> object:
         if "agent" in sys.modules:
             del sys.modules["agent"]
         import agent as mod
+
         importlib.reload(mod)
         return mod
 
@@ -65,7 +66,8 @@ class TestDefaults:
     def test_agent_id_defaults_to_main(self, monkeypatch):
         """OPENCLAW_AGENT_ID defaults to 'main' when not set."""
         import os
-        mod = _reload(monkeypatch, {"OPENCLAW_GATEWAY_TOKEN": "tok-test"})
+
+        _reload(monkeypatch, {"OPENCLAW_GATEWAY_TOKEN": "tok-test"})
         # Reload reads OPENCLAW_AGENT_ID at call time — check os.getenv default
         monkeypatch.delenv("OPENCLAW_AGENT_ID", raising=False)
         assert os.getenv("OPENCLAW_AGENT_ID", "main") == "main"
@@ -73,6 +75,7 @@ class TestDefaults:
     def test_agent_id_can_be_overridden(self, monkeypatch):
         """OPENCLAW_AGENT_ID is respected when set."""
         import os
+
         monkeypatch.setenv("OPENCLAW_AGENT_ID", "alex")
         assert os.getenv("OPENCLAW_AGENT_ID", "main") == "alex"
 
@@ -84,17 +87,20 @@ class TestDefaults:
     def test_session_key_is_read_when_set(self, monkeypatch):
         """OPENCLAW_SESSION_KEY is read from environment."""
         import os
+
         monkeypatch.setenv("OPENCLAW_SESSION_KEY", "agent:alex:telegram:direct:123")
         assert os.getenv("OPENCLAW_SESSION_KEY") == "agent:alex:telegram:direct:123"
 
     def test_gateway_url_default(self, monkeypatch):
         """OPENCLAW_GATEWAY_URL defaults to localhost gateway."""
         import os
+
         monkeypatch.delenv("OPENCLAW_GATEWAY_URL", raising=False)
         assert os.getenv("OPENCLAW_GATEWAY_URL", "http://127.0.0.1:18789/v1") == "http://127.0.0.1:18789/v1"
 
     def test_gateway_url_can_be_overridden(self, monkeypatch):
         """OPENCLAW_GATEWAY_URL can point at a remote gateway."""
         import os
+
         monkeypatch.setenv("OPENCLAW_GATEWAY_URL", "http://remote:9000/v1")
         assert os.getenv("OPENCLAW_GATEWAY_URL") == "http://remote:9000/v1"

@@ -20,7 +20,9 @@ def voice_instructions(monkeypatch_module) -> str:
     with patch("dotenv.load_dotenv"):
         if "agent" in sys.modules:
             import importlib
+
             import agent
+
             importlib.reload(agent)
         else:
             import agent
@@ -31,6 +33,7 @@ def voice_instructions(monkeypatch_module) -> str:
 def monkeypatch_module(request):
     """Module-scoped monkeypatch (pytest's built-in is function-scoped)."""
     from _pytest.monkeypatch import MonkeyPatch
+
     mp = MonkeyPatch()
     yield mp
     mp.undo()

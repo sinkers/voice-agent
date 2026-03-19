@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import secrets
 import uuid
 from contextlib import asynccontextmanager
 
@@ -9,10 +8,10 @@ import jwt
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from livekit.api import AccessToken, CreateAgentDispatchRequest, LiveKitAPI, VideoGrants
-from pydantic import BaseModel, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 load_dotenv()
 
@@ -173,10 +172,10 @@ async def connect_with_token(req: ConnectRequest):
         raise HTTPException(status_code=503, detail="Config tokens not enabled on this server")
     try:
         payload = jwt.decode(req.config_token, CONFIG_SECRET, algorithms=["HS256"])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Config token has expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid config token")
+    except jwt.ExpiredSignatureError as exc:
+        raise HTTPException(status_code=401, detail="Config token has expired") from exc
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail="Invalid config token") from exc
 
     agent_name = payload.get("agent_name")
     if not agent_name:
@@ -206,7 +205,12 @@ async def connect_with_token(req: ConnectRequest):
     # Validate LiveKit URL format
     if not lk_url or not isinstance(lk_url, str):
         raise HTTPException(status_code=400, detail="Invalid livekit_url")
-    if not (lk_url.startswith("ws://") or lk_url.startswith("wss://") or lk_url.startswith("http://") or lk_url.startswith("https://")):
+    if not (
+        lk_url.startswith("ws://")
+        or lk_url.startswith("wss://")
+        or lk_url.startswith("http://")
+        or lk_url.startswith("https://")
+    ):
         raise HTTPException(status_code=400, detail="livekit_url must be a valid WebSocket or HTTP URL")
 
     # Validate API credentials are non-empty strings

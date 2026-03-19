@@ -9,6 +9,7 @@ Covers:
 - per-agent instance ID file is read correctly
 - LiveKit creds are included in payload when provided
 """
+
 from __future__ import annotations
 
 import time
@@ -28,15 +29,18 @@ BASE_URL = "https://voice-agent-web.fly.dev"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _generate(agent_name="voice-agent", display_name="Voice Agent", **kwargs):
     """Call generate_url() with CONFIG_SECRET patched to SECRET."""
-    with patch.object(generate_call_url, "CONFIG_SECRET", SECRET):
-        with patch.object(generate_call_url, "CALL_BASE_URL", BASE_URL):
-            return generate_call_url.generate_url(
-                agent_name=agent_name,
-                display_name=display_name,
-                **kwargs,
-            )
+    with (
+        patch.object(generate_call_url, "CONFIG_SECRET", SECRET),
+        patch.object(generate_call_url, "CALL_BASE_URL", BASE_URL),
+    ):
+        return generate_call_url.generate_url(
+            agent_name=agent_name,
+            display_name=display_name,
+            **kwargs,
+        )
 
 
 def _extract_token(url: str) -> str:
@@ -48,6 +52,7 @@ def _extract_token(url: str) -> str:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateUrl:
     def test_returns_url_string(self):
@@ -98,9 +103,11 @@ class TestGenerateUrl:
             jwt.decode(token, SECRET, algorithms=["HS256"])
 
     def test_missing_config_secret_raises(self):
-        with patch.object(generate_call_url, "CONFIG_SECRET", ""):
-            with pytest.raises(ValueError, match="CONFIG_SECRET is not set"):
-                generate_call_url.generate_url("agent", "Agent")
+        with (
+            patch.object(generate_call_url, "CONFIG_SECRET", ""),
+            pytest.raises(ValueError, match="CONFIG_SECRET is not set"),
+        ):
+            generate_call_url.generate_url("agent", "Agent")
 
     def test_livekit_creds_in_payload(self):
         url = _generate(

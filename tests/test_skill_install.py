@@ -36,18 +36,8 @@ def mock_openclaw_config(tmp_path):
     config_file = config_dir / "openclaw.json"
 
     config = {
-        "gateway": {
-            "port": 18789,
-            "auth": {
-                "token": "test-gateway-token-12345"
-            }
-        },
-        "agents": {
-            "list": [
-                {"id": "main", "name": "Main Agent"},
-                {"id": "test-agent", "name": "Test Agent"}
-            ]
-        }
+        "gateway": {"port": 18789, "auth": {"token": "test-gateway-token-12345"}},
+        "agents": {"list": [{"id": "main", "name": "Main Agent"}, {"id": "test-agent", "name": "Test Agent"}]},
     }
 
     config_file.write_text(json.dumps(config, indent=2))
@@ -64,11 +54,12 @@ class TestSkillSetup:
         assert not install_path.exists()
 
         # Run setup with agent_id to avoid prompt
-        result = subprocess.run(
+        subprocess.run(
             ["python3", "skill/scripts/setup.py", str(install_path), "main"],
             cwd=Path(__file__).parent.parent,
             capture_output=True,
             text=True,
+            check=False,  # Don't raise on non-zero exit (may fail if uv not installed)
         )
 
         # Setup should succeed (or fail gracefully if dependencies missing)
@@ -90,12 +81,14 @@ class TestSkillSetup:
     def test_setup_can_import(self):
         """setup.py should be importable without errors."""
         import sys
+
         skill_scripts_path = str(Path("skill/scripts").absolute())
         if skill_scripts_path not in sys.path:
             sys.path.insert(0, skill_scripts_path)
 
         try:
             import setup
+
             # Should have main function
             assert hasattr(setup, "main"), "setup.py missing main() function"
         finally:
@@ -105,12 +98,14 @@ class TestSkillSetup:
     def test_setup_has_helper_functions(self):
         """setup.py should have all required helper functions."""
         import sys
+
         skill_scripts_path = str(Path("skill/scripts").absolute())
         if skill_scripts_path not in sys.path:
             sys.path.insert(0, skill_scripts_path)
 
         try:
             import setup
+
             # Check for expected functions
             assert hasattr(setup, "read_openclaw_config"), "Missing read_openclaw_config()"
             assert hasattr(setup, "list_agents"), "Missing list_agents()"

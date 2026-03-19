@@ -7,9 +7,33 @@ on:
     branches: [master]
 
 jobs:
+  lint:
+    name: Lint and format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run ruff linter
+        run: uv run ruff check agent.py tests/ skill/scripts/*.py web/backend/*.py
+
+      - name: Run ruff format check
+        run: uv run ruff format --check agent.py tests/ skill/scripts/*.py web/backend/*.py
+
   python-tests:
     name: Python tests
     runs-on: ubuntu-latest
+    needs: lint
     steps:
       - uses: actions/checkout@v4
 

@@ -86,7 +86,7 @@ def _load_agent_credentials() -> tuple[str, str]:
     if not id_file.exists():
         missing.append(str(id_file))
     if missing:
-        print(f"ERROR: Agent not registered. Missing files:\n  " + "\n  ".join(missing))
+        print("ERROR: Agent not registered. Missing files:\n  " + "\n  ".join(missing))
         print("Start the agent worker first: cd ~/Documents/livekit-agent && uv run python agent.py start")
         sys.exit(1)
     return token_file.read_text().strip(), id_file.read_text().strip()
@@ -102,6 +102,7 @@ def _check_env() -> None:
 # Audio helpers
 # ---------------------------------------------------------------------------
 
+
 def _frames_to_wav(frames) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
@@ -115,6 +116,7 @@ def _frames_to_wav(frames) -> bytes:
 
 def _transcribe(wav_bytes: bytes) -> str:
     import openai
+
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     return client.audio.transcriptions.create(
         model="whisper-1",
@@ -125,6 +127,7 @@ def _transcribe(wav_bytes: bytes) -> str:
 def _tts_question(text: str) -> bytes:
     """Generate MP3 bytes of spoken text via OpenAI TTS."""
     import openai
+
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     resp = client.audio.speech.create(model="tts-1", voice="alloy", input=text)
     return resp.content
@@ -132,6 +135,7 @@ def _tts_question(text: str) -> bytes:
 
 def _mp3_to_pcm48k(mp3_bytes: bytes) -> bytes:
     import av
+
     buf = io.BytesIO(mp3_bytes)
     container = av.open(buf)
     resampler = av.AudioResampler(format="s16", layout="mono", rate=AUDIO_SAMPLE_RATE)
@@ -146,10 +150,14 @@ def _mp3_to_pcm48k(mp3_bytes: bytes) -> bytes:
 # LiveKit room helpers
 # ---------------------------------------------------------------------------
 
-async def _collect_agent_audio(lk_token: str, lk_url: str,
-                                wait_for_speech_s: float = DEFAULT_SPEECH_WAIT_TIMEOUT,
-                                drain_silence_s: float = 2.0,
-                                pcm_to_publish: bytes | None = None) -> list:
+
+async def _collect_agent_audio(
+    lk_token: str,
+    lk_url: str,
+    wait_for_speech_s: float = DEFAULT_SPEECH_WAIT_TIMEOUT,
+    drain_silence_s: float = 2.0,
+    pcm_to_publish: bytes | None = None,
+) -> list:
     """
     Join room, optionally publish audio, collect agent audio frames.
     Returns frames list. Raises RuntimeError on timeout.
@@ -165,6 +173,7 @@ async def _collect_agent_audio(lk_token: str, lk_url: str,
     def on_track(track, pub, participant):
         if track.kind == rtc.TrackKind.KIND_AUDIO and participant.identity != "caller":
             stream = rtc.AudioStream(track)
+
             async def collect():
                 try:
                     async for fe in stream:
@@ -178,6 +187,7 @@ async def _collect_agent_audio(lk_token: str, lk_url: str,
                             agent_speaking.set()
                 except asyncio.CancelledError:
                     pass  # Clean shutdown
+
             task = asyncio.create_task(collect())
             collect_tasks.append(task)
 
@@ -192,8 +202,8 @@ async def _collect_agent_audio(lk_token: str, lk_url: str,
         # Push PCM frames (10ms chunks at 48kHz = 480 samples = 960 bytes)
         chunk_bytes = BYTES_PER_FRAME
         for i in range(0, len(pcm_to_publish), chunk_bytes):
-            chunk = pcm_to_publish[i:i + chunk_bytes]
-            chunk = chunk.ljust(chunk_bytes, b'\x00')
+            chunk = pcm_to_publish[i : i + chunk_bytes]
+            chunk = chunk.ljust(chunk_bytes, b"\x00")
             frame = rtc.AudioFrame(
                 data=chunk,
                 sample_rate=AUDIO_SAMPLE_RATE,
@@ -205,23 +215,25 @@ async def _collect_agent_audio(lk_token: str, lk_url: str,
 
     try:
         await asyncio.wait_for(agent_speaking.wait(), timeout=wait_for_speech_s)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # Cancel background tasks before disconnect
         for task in collect_tasks:
             task.cancel()
         await asyncio.gather(*collect_tasks, return_exceptions=True)
         await room.disconnect()
-        raise RuntimeError(f"Agent did not speak within {wait_for_speech_s:.0f}s — is the agent worker running?")
+        raise RuntimeError(
+            f"Agent did not speak within {wait_for_speech_s:.0f}s — is the agent worker running?"
+        ) from None
 
     # Drain: wait for silence (no new non-silent frames in drain_silence_s),
     # but cap total drain time at 15 s so the loop never runs forever.
-    MAX_DRAIN_S = MAX_AUDIO_DRAIN_TIMEOUT
+    max_drain_s = MAX_AUDIO_DRAIN_TIMEOUT
     drain_start = asyncio.get_event_loop().time()
     last_len = len(agent_frames)
     while True:
         await asyncio.sleep(drain_silence_s)
         elapsed = asyncio.get_event_loop().time() - drain_start
-        if len(agent_frames) == last_len or elapsed >= MAX_DRAIN_S:
+        if len(agent_frames) == last_len or elapsed >= max_drain_s:
             break
         last_len = len(agent_frames)
 
@@ -253,12 +265,12 @@ def _connect(agent_id: str) -> dict:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_agent_registered(hub_token: str) -> None:
     """Agent is registered and /agent/config returns display_name."""
     print("test_agent_registered … ", end="", flush=True)
     with httpx.Client(timeout=30) as client:
-        r = client.get(f"{HUB_URL}/agent/config",
-                       headers={"Authorization": f"Bearer {hub_token}"})
+        r = client.get(f"{HUB_URL}/agent/config", headers={"Authorization": f"Bearer {hub_token}"})
         assert r.status_code == 200, f"HTTP {r.status_code}: {r.text}"
         data = r.json()
         assert data.get("display_name"), "display_name is empty"
@@ -291,8 +303,9 @@ def test_greeting(agent_id: str, display_name: str) -> None:
 
     wav = _frames_to_wav(frames)
     transcript = _transcribe(wav)
-    assert display_name.lower() in transcript, \
+    assert display_name.lower() in transcript, (
         f"display_name {display_name!r} not in greeting transcript: {transcript!r}"
+    )
     print(f"OK (transcript: {transcript!r})")
 
 
@@ -308,7 +321,7 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
          finish — this is simpler and more reliable than silence counting,
          which is fragile over LiveKit's continuous silent-frame stream.
     """
-    GREETING_TAIL_S = 6.0   # seconds to wait after greeting starts before asking
+    greeting_tail_s = 6.0  # seconds to wait after greeting starts before asking
 
     conn = await _connect_async(agent_id)
     assert conn["token"], "No LiveKit token"
@@ -319,13 +332,14 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
     room = rtc.Room()
     agent_frames: list = []
     greeting_started = asyncio.Event()
-    collecting = False   # only True after question is fully published
+    collecting = False  # only True after question is fully published
     collect_tasks: list[asyncio.Task] = []
 
     @room.on("track_subscribed")
     def on_track(track, pub, participant):
         if track.kind == rtc.TrackKind.KIND_AUDIO and participant.identity != "caller":
             stream = rtc.AudioStream(track)
+
             async def collect():
                 try:
                     async for fe in stream:
@@ -337,6 +351,7 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
                             agent_frames.append(fe.frame)
                 except asyncio.CancelledError:
                     pass  # Clean shutdown
+
             task = asyncio.create_task(collect())
             collect_tasks.append(task)
 
@@ -345,12 +360,12 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
     # Phase 1: wait for greeting to start
     try:
         await asyncio.wait_for(greeting_started.wait(), timeout=GREETING_WAIT_TIMEOUT)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         await room.disconnect()
-        raise RuntimeError("Agent did not start greeting within 20s — is the agent worker running?")
+        raise RuntimeError("Agent did not start greeting within 20s — is the agent worker running?") from None
 
     # Phase 2: fixed tail — let the greeting finish
-    await asyncio.sleep(GREETING_TAIL_S)
+    await asyncio.sleep(greeting_tail_s)
 
     # Now publish the question — agent has subscribed to our track by now
     source = rtc.AudioSource(sample_rate=48000, num_channels=1)
@@ -371,9 +386,12 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
     # Push PCM frames
     chunk_bytes = BYTES_PER_FRAME
     for i in range(0, len(pcm), chunk_bytes):
-        chunk = pcm[i:i + chunk_bytes].ljust(chunk_bytes, b"\x00")
+        chunk = pcm[i : i + chunk_bytes].ljust(chunk_bytes, b"\x00")
         frame = rtc.AudioFrame(
-            data=chunk, sample_rate=AUDIO_SAMPLE_RATE, num_channels=AUDIO_CHANNELS, samples_per_channel=SAMPLES_PER_FRAME
+            data=chunk,
+            sample_rate=AUDIO_SAMPLE_RATE,
+            num_channels=AUDIO_CHANNELS,
+            samples_per_channel=SAMPLES_PER_FRAME,
         )
         await source.capture_frame(frame)
         await asyncio.sleep(FRAME_DURATION_S)
@@ -448,6 +466,7 @@ def test_audio_response(agent_id: str, display_name: str) -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     _check_env()

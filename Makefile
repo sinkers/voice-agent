@@ -91,9 +91,20 @@ test-all:
 install-test-deps:
 	uv add --dev fastapi httpx
 
-# Basic syntax check
+# Lint and format check
 lint:
-	uv run python -m py_compile agent.py && echo "agent.py OK"
+	@echo "==> Running ruff linter..."
+	uv run ruff check agent.py tests/ skill/scripts/*.py web/backend/*.py
+	@echo "==> Running ruff format check..."
+	uv run ruff format --check agent.py tests/ skill/scripts/*.py web/backend/*.py
+	@echo "✅ All lint checks passed"
+
+# Auto-fix linting issues
+lint-fix:
+	@echo "==> Auto-fixing linting issues..."
+	uv run ruff check --fix agent.py tests/ skill/scripts/*.py web/backend/*.py
+	uv run ruff format agent.py tests/ skill/scripts/*.py web/backend/*.py
+	@echo "✅ Linting issues fixed"
 
 # Smoke test — requires hub deployed + agent worker running
 # Reads credentials from .hub-token-voice-agent and .hub-agent-id-voice-agent

@@ -13,6 +13,7 @@ focus on the API contract: return types, constant values, and file I/O.
 load_dotenv() is patched to a no-op to prevent a local .env from
 interfering with controlled env state.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -22,10 +23,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _reload_agent(monkeypatch, *, gateway_token: str | None = None) -> object:
     """Reload agent.py with a clean OPENCLAW_* env and optional gateway token."""
@@ -46,6 +47,7 @@ def _reload_agent(monkeypatch, *, gateway_token: str | None = None) -> object:
     with patch("dotenv.load_dotenv"):
         sys.modules.pop("agent", None)
         import agent as mod
+
         importlib.reload(mod)
     return mod
 
@@ -53,6 +55,7 @@ def _reload_agent(monkeypatch, *, gateway_token: str | None = None) -> object:
 # ---------------------------------------------------------------------------
 # _create_llm() tests
 # ---------------------------------------------------------------------------
+
 
 class TestCreateLlm:
     def test_direct_openai_when_no_gateway_token(self, monkeypatch):
@@ -73,6 +76,7 @@ class TestCreateLlm:
     def test_direct_llm_called_with_gpt4o(self, monkeypatch):
         """Without gateway token the LLM model argument is 'gpt-4o'."""
         from livekit.plugins import openai as lk_openai
+
         original_llm_cls = lk_openai.LLM
 
         captured = {}
@@ -95,6 +99,7 @@ class TestCreateLlm:
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+
 
 class TestConstants:
     def test_voice_instructions_no_asterisks(self, monkeypatch):
@@ -122,6 +127,7 @@ class TestConstants:
 # Instance ID file I/O (generate_call_url._read_instance_id)
 # ---------------------------------------------------------------------------
 
+
 class TestReadInstanceId:
     """Tests for generate_call_url._read_instance_id().
 
@@ -130,8 +136,9 @@ class TestReadInstanceId:
     """
 
     def test_reads_per_agent_file(self, tmp_path):
-        import generate_call_url
         from unittest.mock import patch
+
+        import generate_call_url
 
         agent_name = "agent-test-read"
         instance_id = "ff001122"
@@ -141,8 +148,9 @@ class TestReadInstanceId:
         assert result == instance_id
 
     def test_empty_when_file_absent(self, tmp_path):
-        import generate_call_url
         from unittest.mock import patch
+
+        import generate_call_url
 
         with patch("generate_call_url.os.path.dirname", return_value=str(tmp_path)):
             result = generate_call_url._read_instance_id("agent-that-does-not-exist-zzz")

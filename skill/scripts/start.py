@@ -32,9 +32,7 @@ def main() -> None:
 
     # Check LIVEKIT_API_KEY is set
     env_vars = dict(
-        line.split("=", 1)
-        for line in env_file.read_text().splitlines()
-        if "=" in line and not line.startswith("#")
+        line.split("=", 1) for line in env_file.read_text().splitlines() if "=" in line and not line.startswith("#")
     )
     livekit_key = env_vars.get("LIVEKIT_API_KEY", "").strip().strip('"').strip("'")
     if not livekit_key or livekit_key == "your_livekit_api_key":

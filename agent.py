@@ -8,7 +8,8 @@ import platform
 import threading
 import time
 import uuid
-from typing import Any, Callable, TypedDict
+from collections.abc import Callable
+from typing import Any, TypedDict
 
 import httpx
 from dotenv import load_dotenv
@@ -22,17 +23,17 @@ else:
 
 load_dotenv()
 
-from openai import AsyncOpenAI
-
+# ruff: noqa: E402 - load_dotenv() must run before livekit imports
 from livekit.agents import (
     Agent,
     AgentSession,
     JobContext,
+    RoomInputOptions,
     WorkerOptions,
     cli,
 )
-from livekit.agents import RoomInputOptions
 from livekit.plugins import deepgram, openai, silero
+from openai import AsyncOpenAI
 
 # Timeout constants (in seconds)
 LLM_STREAMING_READ_TIMEOUT = 60.0  # Max time for LLM to stream a response
@@ -47,6 +48,7 @@ logger = logging.getLogger("voice-agent")
 # Type definitions for hub API responses
 class HubConfig(TypedDict, total=False):
     """Configuration returned from hub /agent/config endpoint."""
+
     livekit_url: str
     livekit_api_key: str
     livekit_api_secret: str
@@ -57,6 +59,7 @@ class HubConfig(TypedDict, total=False):
 
 class HubRegisterResponse(TypedDict):
     """Response from hub /agent/register endpoint."""
+
     agent_id: str
     call_url_base: str
 
@@ -84,6 +87,7 @@ def _file_lock(file_obj):
             msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
         else:
             fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
+
 
 def _create_llm() -> openai.LLM:
     """Create the LLM client.
@@ -169,8 +173,13 @@ async def entrypoint(ctx: JobContext) -> None:
     def _dbg_track(track, pub, participant):
         try:
             from livekit import rtc
-            logger.info("[AUDIO] 🎧 Track subscribed: kind=%s source=%s participant=%s",
-                        track.kind, pub.source, participant.identity)
+
+            logger.info(
+                "[AUDIO] 🎧 Track subscribed: kind=%s source=%s participant=%s",
+                track.kind,
+                pub.source,
+                participant.identity,
+            )
             if track.kind == rtc.TrackKind.KIND_AUDIO:
                 logger.info("[AUDIO] ✅ AUDIO TRACK READY - should receive audio frames now")
         except Exception as exc:
@@ -179,8 +188,12 @@ async def entrypoint(ctx: JobContext) -> None:
     @ctx.room.on("track_published")
     def _dbg_pub(pub, participant):
         try:
-            logger.info("[AUDIO] 📢 Track published: source=%s participant=%s subscribed=%s",
-                        pub.source, participant.identity, pub.subscribed)
+            logger.info(
+                "[AUDIO] 📢 Track published: source=%s participant=%s subscribed=%s",
+                pub.source,
+                participant.identity,
+                pub.subscribed,
+            )
         except Exception as exc:
             logger.exception("Error in track_published handler: %s", exc)
 
@@ -237,7 +250,9 @@ async def entrypoint(ctx: JobContext) -> None:
                 _t["tts_start"] = time.perf_counter()
                 if "stt_done" in _t:
                     llm_tts_time = _t["tts_start"] - _t["stt_done"]
-                    logger.info("[AUDIO] 🔊 Agent started speaking (LLM+TTS took %.3fs) - playing audio to room", llm_tts_time)
+                    logger.info(
+                        "[AUDIO] 🔊 Agent started speaking (LLM+TTS took %.3fs) - playing audio to room", llm_tts_time
+                    )
                 else:
                     logger.info("[AUDIO] 🔊 Agent started speaking - playing audio to room")
             except Exception as exc:
@@ -274,8 +289,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
         logger.info("Agent ready in room: %s", ctx.room.name)
         logger.info("[debug] session.input.audio=%r", session.input.audio)
-        logger.info("[debug] room participants: %r",
-                    list(ctx.room.remote_participants.keys()))
+        logger.info("[debug] room participants: %r", list(ctx.room.remote_participants.keys()))
 
         # Explicit set_participant in case track_subscribed fired before
         # _init_task resolved _participant_available_fut (race condition with
@@ -315,11 +329,10 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
 
     if os.path.exists(token_file):
         try:
-            with open(token_file, "r+") as f:
-                with _file_lock(f):
-                    token = f.read().strip()
-                    if token:
-                        return token
+            with open(token_file, "r+") as f, _file_lock(f):
+                token = f.read().strip()
+                if token:
+                    return token
         except OSError as exc:
             logger.warning("Failed to read token file, will re-authenticate: %s", exc)
 
@@ -362,11 +375,10 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
             token_path = os.path.join(_here, f".hub-token-{base_name}")
             # Use atomic write: write to temp file, then rename
             temp_path = f"{token_path}.tmp"
-            with open(temp_path, "w") as f:
-                with _file_lock(f):
-                    f.write(token)
-                    f.flush()
-                    os.fsync(f.fileno())  # Ensure written to disk
+            with open(temp_path, "w") as f, _file_lock(f):
+                f.write(token)
+                f.flush()
+                os.fsync(f.fileno())  # Ensure written to disk
             # Set secure permissions before making visible
             os.chmod(temp_path, 0o600)
             # Atomic rename (overwrites existing file)
@@ -394,8 +406,8 @@ def _hub_get_config(hub_url: str, token: str, base_name: str) -> HubConfig:
                 f"{hub_url}/agent/config",
                 headers={"Authorization": f"Bearer {token}"},
             )
-    except httpx.TimeoutException:
-        raise RuntimeError(f"Hub request timed out after {HUB_REQUEST_TIMEOUT}s: {hub_url}")
+    except httpx.TimeoutException as exc:
+        raise RuntimeError(f"Hub request timed out after {HUB_REQUEST_TIMEOUT}s: {hub_url}") from exc
     except httpx.ConnectError as exc:
         raise RuntimeError(f"Failed to connect to hub: {hub_url}") from exc
     except httpx.RequestError as exc:
@@ -422,7 +434,9 @@ def _hub_get_config(hub_url: str, token: str, base_name: str) -> HubConfig:
         raise RuntimeError(f"Failed to parse hub response as JSON: {resp.text[:200]}") from exc
 
 
-def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, config: HubConfig, base_name: str) -> str:
+def _hub_register(
+    hub_url: str, token: str, agent_name: str, display_name: str, config: HubConfig, base_name: str
+) -> str:
     """Register agent with hub, persist agent_id, return call_url_base.
     Raises RuntimeError on network or server errors."""
     _here = os.path.dirname(os.path.abspath(__file__))
@@ -460,11 +474,10 @@ def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, 
     # Write agent ID atomically
     agent_id_file = os.path.join(_here, f".hub-agent-id-{base_name}")
     temp_path = f"{agent_id_file}.tmp"
-    with open(temp_path, "w") as f:
-        with _file_lock(f):
-            f.write(data["agent_id"])
-            f.flush()
-            os.fsync(f.fileno())
+    with open(temp_path, "w") as f, _file_lock(f):
+        f.write(data["agent_id"])
+        f.flush()
+        os.fsync(f.fileno())
     # Set secure permissions before making visible
     os.chmod(temp_path, 0o600)
     os.replace(temp_path, agent_id_file)
@@ -561,17 +574,15 @@ if __name__ == "__main__":
     # Persist instance ID across restarts
     _id_file = os.path.join(_here, f".agent-instance-id-{_base_name}")
     if os.path.exists(_id_file):
-        with open(_id_file, "r") as f:
-            with _file_lock(f):
-                _instance_id = f.read().strip()
+        with open(_id_file) as f, _file_lock(f):
+            _instance_id = f.read().strip()
     else:
         _instance_id = uuid.uuid4().hex[:8]
         temp_path = f"{_id_file}.tmp"
-        with open(temp_path, "w") as f:
-            with _file_lock(f):
-                f.write(_instance_id)
-                f.flush()
-                os.fsync(f.fileno())
+        with open(temp_path, "w") as f, _file_lock(f):
+            f.write(_instance_id)
+            f.flush()
+            os.fsync(f.fileno())
         # Set secure permissions before making visible
         os.chmod(temp_path, 0o600)
         os.replace(temp_path, _id_file)

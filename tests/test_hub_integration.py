@@ -4,9 +4,10 @@ These tests verify that the agent handles first-run scenarios and hub
 communication errors correctly.
 """
 
-import pytest
 from unittest.mock import Mock, patch
+
 import httpx
+import pytest
 
 
 class TestHubFirstRun:
@@ -32,9 +33,7 @@ class TestHubFirstRun:
         mock_response.status_code = 404
         mock_response.text = '{"detail":"No agent registered"}'
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "404 Not Found",
-            request=Mock(),
-            response=mock_response
+            "404 Not Found", request=Mock(), response=mock_response
         )
         mock_client.return_value.__enter__.return_value.get.return_value = mock_response
 
@@ -70,12 +69,13 @@ class TestHubFirstRun:
     @patch("agent.httpx.Client")
     def test_handles_401_invalid_token(self, mock_client):
         """401 response should delete token file and raise ValueError."""
-        from agent import _hub_get_config
-        import tempfile
         import os
+        import tempfile
+
+        from agent import _hub_get_config
 
         # Create a temp token file
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='-test-agent') as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix="-test-agent") as f:
             token_file = f.name
             f.write("invalid_token")
 
@@ -86,9 +86,11 @@ class TestHubFirstRun:
             mock_client.return_value.__enter__.return_value.get.return_value = mock_response
 
             # Patch the token file path
-            with patch("agent.os.path.join", return_value=token_file):
-                with pytest.raises(ValueError) as exc_info:
-                    _hub_get_config("https://test-hub.com", "invalid_token", "test-agent")
+            with (
+                patch("agent.os.path.join", return_value=token_file),
+                pytest.raises(ValueError) as exc_info,
+            ):
+                _hub_get_config("https://test-hub.com", "invalid_token", "test-agent")
 
             assert "invalid or expired" in str(exc_info.value)
         finally:
@@ -102,9 +104,7 @@ class TestHubFirstRun:
         from agent import _hub_get_config
 
         # Mock connection error
-        mock_client.return_value.__enter__.return_value.get.side_effect = (
-            httpx.ConnectError("Connection refused")
-        )
+        mock_client.return_value.__enter__.return_value.get.side_effect = httpx.ConnectError("Connection refused")
 
         with pytest.raises(RuntimeError) as exc_info:
             _hub_get_config("https://test-hub.com", "test_token", "test-agent")
@@ -117,9 +117,7 @@ class TestHubFirstRun:
         from agent import _hub_get_config
 
         # Mock timeout
-        mock_client.return_value.__enter__.return_value.get.side_effect = (
-            httpx.TimeoutException("Request timed out")
-        )
+        mock_client.return_value.__enter__.return_value.get.side_effect = httpx.TimeoutException("Request timed out")
 
         with pytest.raises(RuntimeError) as exc_info:
             _hub_get_config("https://test-hub.com", "test_token", "test-agent")

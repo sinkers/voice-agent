@@ -10,10 +10,10 @@ environment.  Run them with:
 
 from __future__ import annotations
 
-import os
-import urllib.request
-import urllib.error
 import json
+import os
+import urllib.error
+import urllib.request
 
 import pytest
 
@@ -59,11 +59,13 @@ class TestGatewayReachability:
 
 class TestGatewayAuth:
     def test_invalid_token_returns_401(self):
-        payload = json.dumps({
-            "model": "openclaw:main",
-            "messages": [{"role": "user", "content": "ping"}],
-            "max_tokens": 1,
-        }).encode()
+        payload = json.dumps(
+            {
+                "model": "openclaw:main",
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+            }
+        ).encode()
         status, _ = _request(
             "/chat/completions",
             token="invalid-token-xyz",
@@ -73,15 +75,17 @@ class TestGatewayAuth:
         assert status == 401, f"Expected 401 for bad token, got {status}"
 
     def test_valid_token_does_not_return_401(self):
-        payload = json.dumps({
-            "model": "openclaw:main",
-            "messages": [{"role": "user", "content": "ping"}],
-            "max_tokens": 1,
-        }).encode()
+        payload = json.dumps(
+            {
+                "model": "openclaw:main",
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+            }
+        ).encode()
         status, _ = _request(
             "/chat/completions",
             token=GATEWAY_TOKEN,
             method="POST",
             body=payload,
         )
-        assert status != 401, f"Valid token was rejected (got 401)"
+        assert status != 401, "Valid token was rejected (got 401)"

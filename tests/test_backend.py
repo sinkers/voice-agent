@@ -15,6 +15,7 @@ NOTE: These tests require fastapi and httpx to be installed.  Run them via
 the backend project's own venv or after ``pip install fastapi httpx``.
 They are automatically skipped when those packages are absent.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -31,11 +32,11 @@ import pytest
 fastapi = pytest.importorskip("fastapi", reason="fastapi not installed — skipping backend tests")
 pytest.importorskip("httpx", reason="httpx not installed — skipping backend tests")
 
-from fastapi.testclient import TestClient
-from httpx import AsyncClient, ASGITransport
-
 # conftest.py has already set env vars and added web/backend to sys.path.
+# ruff: noqa: E402 - imports after conftest setup
 import main as _main_module
+from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from main import app
 
 CONFIG_SECRET = "test-config-secret-exactly-32bytes!"
@@ -44,6 +45,7 @@ CONFIG_SECRET = "test-config-secret-exactly-32bytes!"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_token(payload_extra: dict | None = None, secret: str = CONFIG_SECRET, ttl: int = 3600) -> str:
     now = int(time.time())
@@ -66,6 +68,7 @@ def _expired_token() -> str:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def client():
     return TestClient(app, raise_server_exceptions=True)
@@ -74,6 +77,7 @@ def client():
 # ---------------------------------------------------------------------------
 # GET /agents
 # ---------------------------------------------------------------------------
+
 
 class TestListAgents:
     def test_returns_empty_list_by_default(self, client, monkeypatch):
@@ -94,20 +98,25 @@ class TestListAgents:
 # POST /connect — success path
 # ---------------------------------------------------------------------------
 
+
 class TestConnect:
     def test_valid_token_returns_200(self, client, mock_livekit_api, mock_access_token):
         mock_lk_cls, mock_dispatch = mock_livekit_api
-        with patch("main.LiveKitAPI", mock_lk_cls), \
-             patch("main.AccessToken", mock_access_token), \
-             patch.object(_main_module, "CONFIG_SECRET", CONFIG_SECRET):
+        with (
+            patch("main.LiveKitAPI", mock_lk_cls),
+            patch("main.AccessToken", mock_access_token),
+            patch.object(_main_module, "CONFIG_SECRET", CONFIG_SECRET),
+        ):
             resp = client.post("/connect", json={"config_token": _make_token()})
         assert resp.status_code == 200
 
     def test_valid_token_response_fields(self, client, mock_livekit_api, mock_access_token):
         mock_lk_cls, mock_dispatch = mock_livekit_api
-        with patch("main.LiveKitAPI", mock_lk_cls), \
-             patch("main.AccessToken", mock_access_token), \
-             patch.object(_main_module, "CONFIG_SECRET", CONFIG_SECRET):
+        with (
+            patch("main.LiveKitAPI", mock_lk_cls),
+            patch("main.AccessToken", mock_access_token),
+            patch.object(_main_module, "CONFIG_SECRET", CONFIG_SECRET),
+        ):
             resp = client.post("/connect", json={"config_token": _make_token()})
         body = resp.json()
         assert "token" in body
@@ -119,20 +128,24 @@ class TestConnect:
 
     def test_dispatch_id_matches_mock(self, client, mock_livekit_api, mock_access_token):
         mock_lk_cls, mock_dispatch = mock_livekit_api
-        with patch("main.LiveKitAPI", mock_lk_cls), \
-             patch("main.AccessToken", mock_access_token), \
-             patch.object(_main_module, "CONFIG_SECRET", CONFIG_SECRET):
+        with (
+            patch("main.LiveKitAPI", mock_lk_cls),
+            patch("main.AccessToken", mock_access_token),
+            patch.object(_main_module, "CONFIG_SECRET", CONFIG_SECRET),
+        ):
             resp = client.post("/connect", json={"config_token": _make_token()})
         assert resp.json()["dispatch_id"] == mock_dispatch.id
 
     def test_livekit_api_called_with_server_defaults(self, client, mock_livekit_api, mock_access_token):
         mock_lk_cls, _ = mock_livekit_api
-        with patch("main.LiveKitAPI", mock_lk_cls), \
-             patch("main.AccessToken", mock_access_token), \
-             patch.object(_main_module, "CONFIG_SECRET", CONFIG_SECRET), \
-             patch.object(_main_module, "LIVEKIT_URL", "wss://test.livekit.local"), \
-             patch.object(_main_module, "LIVEKIT_API_KEY", "test-api-key"), \
-             patch.object(_main_module, "LIVEKIT_API_SECRET", "test-api-secret"):
+        with (
+            patch("main.LiveKitAPI", mock_lk_cls),
+            patch("main.AccessToken", mock_access_token),
+            patch.object(_main_module, "CONFIG_SECRET", CONFIG_SECRET),
+            patch.object(_main_module, "LIVEKIT_URL", "wss://test.livekit.local"),
+            patch.object(_main_module, "LIVEKIT_API_KEY", "test-api-key"),
+            patch.object(_main_module, "LIVEKIT_API_SECRET", "test-api-secret"),
+        ):
             client.post("/connect", json={"config_token": _make_token()})
         mock_lk_cls.assert_called_once_with(
             url="wss://test.livekit.local",
@@ -144,6 +157,7 @@ class TestConnect:
 # ---------------------------------------------------------------------------
 # POST /connect — error paths
 # ---------------------------------------------------------------------------
+
 
 class TestConnectErrors:
     def test_expired_token_returns_401(self, client):
@@ -183,17 +197,22 @@ class TestConnectErrors:
 # POST /connect — per-token LiveKit credential override
 # ---------------------------------------------------------------------------
 
+
 class TestConnectPerTokenCreds:
     def test_per_token_creds_override_server_defaults(self, client, mock_livekit_api, mock_access_token):
         mock_lk_cls, _ = mock_livekit_api
-        token = _make_token({
-            "livekit_url": "wss://override.livekit.cloud",
-            "livekit_api_key": "override-key",
-            "livekit_api_secret": "override-secret",
-        })
-        with patch("main.LiveKitAPI", mock_lk_cls), \
-             patch("main.AccessToken", mock_access_token), \
-             patch.object(_main_module, "CONFIG_SECRET", CONFIG_SECRET):
+        token = _make_token(
+            {
+                "livekit_url": "wss://override.livekit.cloud",
+                "livekit_api_key": "override-key",
+                "livekit_api_secret": "override-secret",
+            }
+        )
+        with (
+            patch("main.LiveKitAPI", mock_lk_cls),
+            patch("main.AccessToken", mock_access_token),
+            patch.object(_main_module, "CONFIG_SECRET", CONFIG_SECRET),
+        ):
             resp = client.post("/connect", json={"config_token": token})
         assert resp.status_code == 200
         # LiveKitAPI must have been called with the per-token creds
@@ -210,28 +229,33 @@ class TestConnectPerTokenCreds:
 # Startup: missing env vars
 # ---------------------------------------------------------------------------
 
+
 class TestMissingEnvVars:
     def test_missing_env_vars_raises_runtime_error(self):
         """_check_required_env raises RuntimeError when vars are absent."""
         import main as m
+
         with pytest.raises(RuntimeError, match="Missing required environment variables"):
             m._check_required_env({"LIVEKIT_URL": "", "LIVEKIT_API_KEY": "", "LIVEKIT_API_SECRET": ""})
 
     def test_partial_missing_raises(self):
         """_check_required_env raises when only some vars are set."""
         import main as m
+
         with pytest.raises(RuntimeError, match="LIVEKIT_API_SECRET"):
             m._check_required_env({"LIVEKIT_URL": "wss://x", "LIVEKIT_API_KEY": "key", "LIVEKIT_API_SECRET": ""})
 
     def test_all_present_does_not_raise(self):
         """_check_required_env passes when all vars are set."""
         import main as m
+
         m._check_required_env({"LIVEKIT_URL": "wss://x", "LIVEKIT_API_KEY": "key", "LIVEKIT_API_SECRET": "secret"})
 
 
 # ---------------------------------------------------------------------------
 # Async client smoke test (httpx AsyncClient)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_agents_async_client(mock_livekit_api):

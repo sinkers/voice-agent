@@ -8,6 +8,7 @@ This module is loaded by pytest before any test file.  It:
    time, so test_backend.py can import the FastAPI app without crashing.
 3. Provides shared fixtures used across multiple test files.
 """
+
 from __future__ import annotations
 
 import os
@@ -35,6 +36,7 @@ os.environ.setdefault("CONFIG_SECRET", "test-config-secret-exactly-32bytes!")
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def livekit_env(monkeypatch):
