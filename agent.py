@@ -273,6 +273,13 @@ async def entrypoint(ctx: JobContext) -> None:
         _greeting = os.getenv("AGENT_GREETING", "")
         if _greeting:
             await session.say(_greeting)
+            logger.info("[AUDIO] 🔊 Greeting sent: %r", _greeting)
+
+        # Keep the agent alive - wait for the session to end
+        # The session will end when the room is disconnected or an error occurs
+        logger.info("[AUDIO] ✅ Agent is ready and listening...")
+        await session.aclose()  # Wait until session is closed (room disconnect/error)
+
     except Exception:
         logger.exception("Agent failed to start")
         raise
