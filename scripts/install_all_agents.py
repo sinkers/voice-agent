@@ -140,6 +140,21 @@ def main() -> None:
     print("  All agents installed. Starting workers...")
     print(f"{'='*60}\n")
 
+    # Reset all agent sessions so the next conversation picks up fresh
+    # workspace context (updated IDENTITY.md, MEMORY.md with new call URLs).
+    print("Resetting agent sessions...")
+    openclaw_agents_dir = Path.home() / ".openclaw" / "agents"
+    for agent_id, display_name, _ in installed:
+        sessions_file = openclaw_agents_dir / agent_id / "sessions" / "sessions.json"
+        if sessions_file.exists():
+            try:
+                import json
+                sessions_file.write_text(json.dumps({}))
+                print(f"  ✓ Reset sessions for {display_name} ({agent_id})")
+            except Exception as e:
+                print(f"  WARNING: could not reset sessions for {agent_id}: {e}")
+
+    print()
     for agent_id, display_name, install_path in installed:
         print(f"Starting {display_name} ({agent_id})...")
         start_agent(install_path, agent_id)
