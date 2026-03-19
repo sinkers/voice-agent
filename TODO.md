@@ -1,89 +1,129 @@
 # Voice Agent Code Review TODO
 
 Generated: 2026-03-19
+Last Updated: 2026-03-19
+
+## 📊 PROGRESS SUMMARY
+
+**Completed:** 11/22 issues (50%)
+**Critical Issues:** 4/4 fixed ✅
+**Major Issues:** 2/4 fixed
+**Moderate Issues:** 4/5 fixed
+**Code Quality:** 1/8 fixed
+
+### Recent Fixes (Today)
+- ✅ Fixed all 4 critical security/reliability issues
+- ✅ Added file locking and atomic writes for credentials
+- ✅ Converted heartbeat to managed thread with graceful shutdown
+- ✅ Fixed private API usage (session._room_io → session.room_io)
+- ✅ Comprehensive input validation for all API endpoints
+- ✅ Eliminated shell injection risk in installer
+- ✅ Added error handling to all event handlers
+- ✅ Extracted timeout constants for configurability
 
 ## 🔴 CRITICAL ISSUES
 
-- [ ] **1. Private API Access** (`agent.py:168-173`)
-  - Accessing `session._room_io` to work around race condition
-  - Need to find proper public API or report to livekit-agents
-  - Risk: Will break with library updates
+- [x] 1. Private API Access (`agent.py:234-239`) ✅
+  - FIXED: Changed `session._room_io` to `session.room_io` (public API)
+  - `set_participant()` is the official public method for this use case
+  - Commit: 2d9e97e
 
-- [ ] **2. Daemon Thread with No Shutdown** (`agent.py:282-298`)
-  - Infinite heartbeat loop with no shutdown mechanism
-  - Token can expire but thread keeps using stale token
-  - Fix: Convert to asyncio.Task with proper shutdown
+- [x] 2. Daemon Heartbeat Thread with No Shutdown (`agent.py:416-452`) ✅
+  - FIXED: Converted to HeartbeatThread class with graceful shutdown
+  - Added atexit handler, Event-based shutdown, token refresh support
+  - Added failure tracking with suppression after 10 consecutive failures
+  - Commit: 8576961
 
-- [x] **3. Missing Resource Cleanup** (`agent.py:96-180`) ✅
-  - FIXED: Added finally block with cleanup logging
-  - Commit: 21c8086
+- [x] 3. Resource Cleanup (`agent.py:247-250`) ✅
+  - FIXED: Added finally block that clears timing state
+  - Session cleanup handled by livekit-agents framework
+  - Commit: b571ce7
 
-- [ ] **4. Race Condition in Token File Management** (`agent.py:187-233`)
-  - No file locking - concurrent processes can corrupt files
-  - TOCTOU race between existence check and read
-  - Fix: Add file locking with fcntl/lockf
+- [x] 4. Race Condition in Token/ID File Management ✅
+  - FIXED: Added cross-platform file locking (fcntl/msvcrt)
+  - Implemented atomic writes (temp file + rename pattern)
+  - Added fsync to ensure data hits disk before rename
+  - Commit: d743211
 
 ## 🟡 MAJOR ISSUES
 
-- [x] **5. Timeout Configuration Inconsistency** ✅
-  - FIXED: Extracted all timeouts as named constants
-  - Commit: ef2fa98
+- [x] 5. Timeout Configuration Consistency (`agent.py:26-31`)
+  - FIXED: Extracted LLM/hub/heartbeat timeouts into named constants.
+  - Follow-up: Document semantics in README and ensure consistent usage across modules.
 
-- [ ] **6. Synchronous Blocking in Main Thread** (`agent.py:301-348`)
-  - Device auth polling blocks main thread
-  - Fix: Consider async startup pattern (lower priority)
+- [ ] 6. Synchronous Blocking in Main Thread (`agent.py:246-251`)
+  - Device auth polling uses `time.sleep`, blocking startup.
+  - Fix: Make polling async or move to supervised background task.
 
-- [x] **7. Inadequate Hub Communication Error Handling** (`agent.py:236-252`) ✅
-  - FIXED: Added comprehensive error handling with better diagnostics
-  - Commit: 3d02309
+- [x] 7. Hub Communication Error Handling ✅
+  - FIXED: Added comprehensive error handling for all hub endpoints
+  - Specific exceptions for timeout, connection, HTTP errors
+  - Response validation (JSON parsing, required fields)
+  - Retry logic for device auth polling
+  - Commit: 9bf1602
 
-- [x] **8. Unbounded Memory Growth in smoke_test** (`tests/smoke_test.py:145-159`) ✅
-  - FIXED: Replaced ensure_future() with create_task()
-  - Note: Already fixed upstream
+- [ ] 8. Smoke Test Task/Memory Hygiene (`tests/smoke_test.py`)
+  - Partially addressed: uses `asyncio.create_task()` and bounded drain/silence detection.
+  - Remaining: Explicitly track/cancel tasks on disconnect; consider frame cap to bound memory.
 
 ## 🟠 MODERATE ISSUES
 
-- [x] **9. No Error Handling in Event Handlers** (`agent.py:99-152`) ✅
-  - FIXED: Added try/except to all event handlers
-  - Commit: 7f8e54e
+- [x] 9. Error Handling in Event Handlers (`agent.py:99-183`)
+  - FIXED: All handlers wrapped in try/except; logs exceptions with context.
 
-- [ ] **10. Shell Injection Risk** (`web-skill/scripts/utils.py:214`)
-  - Uses `sh -c` with curl piped to sh
-  - Fix: Use direct subprocess invocation, verify downloads
+- [x] 10. Shell Injection Risk (`web-skill/scripts/utils.py`) ✅
+  - FIXED: Download script to temp file first, then execute
+  - No shell piping, proper error handling and cleanup
+  - Commit: 0cf026e
 
-- [ ] **11. Missing Input Validation** (`backend/main.py`)
-  - `agent_name` has no validation
-  - Fix: Add comprehensive input validation
+- [x] 11. Input Validation (`web/backend/main.py`) ✅
+  - FIXED: Comprehensive validation for all API endpoints
+  - Pydantic validators for room_name, identity, agent_name, agent_id
+  - Regex pattern enforcement (alphanumeric, hyphens, underscores only)
+  - Length limits and empty string checks
+  - LiveKit URL and credential validation
+  - Commit: ae0a23d
 
-- [ ] **12. Unclear State Management with `_t` Dictionary**
-  - Global mutable state, never cleared
-  - Fix: Use proper class to encapsulate state
+- [x] 12. `_t` State Management (`agent.py:160-216`)
+  - FIXED: Now local to `entrypoint()` and cleared in `finally`; no global mutable state.
+
+- [ ] 13. Unit Test Regression: `_SECONDS_IN_A_DAY`
+  - `tests/test_agent.py` asserts this constant; missing in `agent.py`.
+  - Fix: Reintroduce `_SECONDS_IN_A_DAY = 86400` or adjust tests if intentionally removed.
 
 ## 📋 CODE QUALITY ISSUES
 
-- [ ] **13. Inconsistent Error Logging**
-  - Fix: Standardize logging patterns
+- [ ] 14. Inconsistent Error Logging / Print Usage
+  - Standardize on `logger` for non-CLI code paths; keep `print()` only for interactive device auth UX.
 
-- [ ] **14. Hard-coded Magic Numbers**
-  - Fix: Extract as named constants with documentation
+- [ ] 15. Hard-coded Magic Numbers
+  - Extract remaining literals to named constants (document intent/units), where applicable.
 
-- [ ] **15. Missing Type Hints**
-  - Fix: Add complete type hints to critical functions
+- [ ] 16. Missing Type Hints
+  - Add comprehensive type hints to hub helpers and event callbacks.
 
-- [ ] **16. No Rate Limiting on Hub Requests**
-  - Fix: Implement exponential backoff for polling
+- [ ] 17. No Rate Limiting on Hub Requests
+  - Implement exponential backoff/jitter for hub polling and transient failures.
 
-- [x] **17. Security: Plaintext Token Storage** ✅
-  - FIXED: Set file permissions to 0600 for all credential files
-  - Commit: f7cb2e8
+- [x] 18. Security: Plaintext Token Storage
+  - FIXED: Credential files set to `0600`.
+  - Optional: Consider OS keychain/encryption; document trade-offs.
 
-- [x] **18. Deprecated asyncio.ensure_future()** ✅
-  - FIXED: Replaced with asyncio.create_task()
-  - Note: Already fixed upstream
+- [x] 19. Deprecated `asyncio.ensure_future()`
+  - FIXED: Tests use `asyncio.create_task()`; not present in agent code.
+
+- [ ] 20. Frontend Error UX (`web/frontend/src/api.ts`)
+  - Surface server `detail` messages when throwing on non-200 responses.
+
+- [ ] 21. Tech Debt: Migrate to `RoomOptions`
+  - `RoomInputOptions` works for `livekit-agents 1.x`; plan migration on library upgrade.
+
+- [ ] 22. `load_dotenv()` at import time
+  - Consider moving to `__main__` to avoid surprising env overrides; tests currently patch this.
 
 ## NOTES
 
 - Current branch: `fix/agent-audio-subscription`
 - Main branch: `master`
 - Priority: Fix critical issues first with small commits + tests
-- System is regressing - used to work, getting progressively broken
+- System is regressing — used to work, getting progressively broken
