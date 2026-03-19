@@ -5,11 +5,11 @@ Last Updated: 2026-03-19 (Evening Session Complete)
 
 ## 📊 PROGRESS SUMMARY
 
-**Completed:** 17/23 issues (74%)
+**Completed:** 18/30 issues (60%)
 **Critical Issues:** 4/4 fixed ✅ (100%)
 **Major Issues:** 3/4 fixed ✅ (75%)
 **Moderate Issues:** 5/5 fixed ✅ (100%)
-**Code Quality:** 5/9 fixed (56%)
+**Code Quality:** 6/11 fixed (55%)
 
 ### Latest Session Improvements
 - ✅ CI configuration fixed (skip integration/smoke tests)
@@ -88,22 +88,139 @@ Last Updated: 2026-03-19 (Evening Session Complete)
     - Environment variable overrides needed
   - Benefits: full control, data sovereignty, cost optimization
 
-- [ ] 26. Integration test: install skill into a fresh OpenClaw instance
-  - No test currently verifies the end-to-end skill install flow.
-  - **Approach:**
-    1. Start a fresh OpenClaw Docker container (clean `~/.openclaw/` state).
-    2. Serve the `skill/` directory at a local URL (e.g. `python3 -m http.server`).
-    3. Point the OpenClaw instance at that URL to trigger skill install — OpenClaw fetches `livekit-voice.skill` and runs `scripts/setup.py`.
-    4. `setup.py` reads the container's `openclaw.json`, lists available agents, and prompts for selection — simulate/automate this input with a pre-seeded agent config.
-    5. Assert: `.env` is populated with correct gateway URL, token, and `OPENCLAW_AGENT_ID`; venv and model files are present; `agent.py start` exits cleanly.
-  - **What it catches:** broken setup script, missing asset files, env patching regressions, incompatible `openclaw.json` schema changes.
-  - **Credentials needed in CI:** `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY` (or stubs for install-only verification).
+- [x] 26. Basic Skill Installation Tests ✅
+  - ADDED: test_skill_install.py with 10 integration tests
+  - Tests validate:
+    - All skill scripts have valid Python syntax
+    - setup.py can import and has required functions
+    - Asset files (agent.py, pyproject.toml, env.example) are valid
+    - Scripts are executable
+  - Fast tests (< 1s), no Docker/network required
+  - Marked as @pytest.mark.integration (skipped in CI)
+
+- [ ] 27. Docker E2E: Full Skill Installation in Fresh OpenClaw Container
+  - Need comprehensive e2e test using OpenClaw Docker container
+  - **Approach (using OpenClaw Web Completion API):**
+    1. Boot fresh OpenClaw Docker container with web completion API exposed
+    2. Use OpenClaw's web API to install skill:
+       - POST /api/completion with "install livekit-voice skill from <url>"
+       - API handles interactive prompts (agent selection) automatically
+    3. Verify installation via API queries:
+       - Query OpenClaw: "what skills are installed?"
+       - Query: "what is the voice agent status?"
+       - Should return skill installed, .env configured
+    4. Test skill operations via API:
+       - "start voice agent" via API
+       - "voice agent status" should show running
+       - "stop voice agent" via API
+  - **Benefits:**
+    - Uses real OpenClaw web completion API (no stdin mocking)
+    - Tests actual user workflow (API-driven)
+    - Can run in CI with Docker Compose
+  - **What it catches:** setup script bugs, asset packaging issues, openclaw.json schema changes, skill metadata issues
 
 - [ ] 27. Remove old POC frontend (`web/` directory)
   - `web/frontend/` and `web/backend/` are a standalone POC that pre-dates the hub.
   - The canonical frontend now lives in `voice-agent-hub/frontend/`.
   - README updated to clarify this (commit 4bacdbb)
   - Remove `web/`, `web-skill/`, and the Node.js prerequisite once confirmed safe.
+
+- [ ] 29. Multi-Agent Install: One Installation, Per-Agent Services
+  - **Goal:** Install the skill once into an OpenClaw instance and make it available to all agents. Any agent can start/stop its own voice service independently, multiple agents can run concurrently, and any agent can return its call URL on request.
+  - **Current problem:** The skill is installed once with a single `OPENCLAW_AGENT_ID` baked into `.env`. Running a second agent requires a second full install at a different path. There's no way for an agent to start itself or report its URL — these are manual shell operations.
+
+  - **Required changes:**
+
+  - **1 — Shared install layout**
+    - Install shared assets (venv, model files, agent code) once to a shared path (e.g. `~/.openclaw/skills/livekit-voice/`).
+    - Per-agent state lives in subdirectories: `~/.openclaw/skills/livekit-voice/agents/<agent_id>/`
+      - `.env` — agent-specific config (LIVEKIT creds, `OPENCLAW_AGENT_ID=<agent_id>`)
+      - `agent.pid` — process ID of the running service
+      - `agent.log` — log output
+      - `call_url` — call URL written by the agent on startup, read back by the skill
+
+  - **2 — Per-agent script interface**
+    - `setup.py <agent_id>` — configure credentials for a specific agent (creates `agents/<agent_id>/.env`); shared venv/model files are only installed once
+    - `start.py <agent_id>` — start a service process for that agent; writes PID to `agents/<agent_id>/agent.pid`
+    - `stop.py <agent_id>` — stop just that agent's process
+    - `status.py [<agent_id>]` — status for one agent, or list all configured agents and their running state
+    - `call_url.py <agent_id>` — print the stored call URL for that agent (read from `agents/<agent_id>/call_url`)
+
+  - **3 — Agent writes its call URL on startup**
+    - In `agent.py`, after `_call_url_base` is resolved, write it to `agents/<agent_id>/call_url` so the skill can read it back without hitting the hub API.
+
+  - **4 — SKILL.md and skill description update**
+    - Update `SKILL.md` so OpenClaw knows the commands now take `<agent_id>` arguments.
+    - Ensure the skill description covers "start voice for this agent", "stop voice", "what is my call URL?".
+    - The `call_url.py` command becomes the answer to "give me my call URL" — OpenClaw calls it and speaks the result.
+
+  - **5 — Backwards compatibility**
+    - Existing single-agent installs should keep working; detect old layout and migrate or document the path change.
+
+- [ ] 30. Configurable TTS Voice Selection
+  - **Goal:** Allow the voice to be configured per-agent rather than hardcoded to `"alloy"`.
+  - **Current:** `agent.py:92` — `tts=openai.TTS(voice="alloy")` is hardcoded.
+  - **Fix:**
+    - Add `OPENAI_TTS_VOICE` to `.env` / `env.example` (default: `alloy`).
+    - Read it in `agent.py` at startup: `openai.TTS(voice=os.getenv("OPENAI_TTS_VOICE", "alloy"))`.
+    - Document the available voices in `env.example` with gender labels:
+
+      | Voice | Gender | Character |
+      |-------|--------|-----------|
+      | `alloy` | Neutral | Default |
+      | `echo` | Male | Soft |
+      | `fable` | Male | Expressive |
+      | `onyx` | Male | Deep |
+      | `nova` | Female | Warm |
+      | `shimmer` | Female | Clear |
+
+    - During `setup.py`, optionally prompt the user to choose a voice (or accept the default).
+  - **Note:** If item 29 (multi-agent install) is implemented first, `OPENAI_TTS_VOICE` belongs in the per-agent `.env` so different agents can have different voices.
+
+- [ ] 31. Pipeline Latency Benchmarking and Fast-Model Recommendations
+  - **Goal:** Measure end-to-end and per-stage latency across interchangeable STT/LLM/TTS providers so the fastest configuration for voice can be identified and documented.
+
+  - **Current state:**
+    - `agent.py` has basic `_t` dict timing (speech start → STT done → TTS start) but it only logs to `logger` and is absent from `skill/assets/agent/agent.py`.
+    - No TTFT (time-to-first-token) measurement, no TTS-to-first-audio measurement, no structured/parseable output for comparison.
+
+  - **Stages to measure (with target budgets):**
+
+    | Stage | Definition | Target |
+    |-------|-----------|--------|
+    | **VAD→STT** | VAD end-of-speech → final transcript | < 300 ms |
+    | **STT→TTFT** | Final transcript → first LLM token | < 300 ms |
+    | **TTFT→TTS-start** | First LLM token → TTS begins streaming audio | < 150 ms |
+    | **TTS-start→first audio** | TTS API call → first audio frame received | < 200 ms |
+    | **E2E** | VAD end-of-speech → first audio frame to caller | < 800 ms |
+
+  - **Implementation plan:**
+
+    1. **Port timing to `skill/assets/agent/agent.py`** — the deployed version currently has none.
+    2. **Add TTFT hook** — livekit-agents fires events on first LLM token; capture `_t["llm_first_token"]` and log `STT→TTFT = llm_first_token - stt_done`.
+    3. **Add TTS-to-first-audio** — capture time between TTS API call and first audio frame emitted; log as `tts_to_audio`.
+    4. **Structured log format** — emit a single JSON summary line per turn so timings can be grepped/parsed without post-processing:
+       ```
+       [LATENCY] {"vad_to_stt": 0.241, "stt_to_ttft": 0.187, "ttft_to_tts": 0.093, "tts_to_audio": 0.198, "e2e": 0.719, "stt": "deepgram/nova-3", "llm": "gpt-4o", "tts": "openai/alloy"}
+       ```
+    5. **Make all three providers configurable via env** — `STT_PROVIDER`, `LLM_PROVIDER`, `TTS_PROVIDER` (or keep existing `OPENAI_TTS_VOICE` pattern) so different stacks can be tested without code changes.
+    6. **Latency test script** (`tests/latency_test.py`) — send a fixed audio clip, capture the JSON latency line from logs, and print a comparison table across runs.
+
+  - **Recommended fast configurations to test (all have livekit-agents plugins):**
+
+    | Rank | STT | LLM | TTS | Expected E2E | Notes |
+    |------|-----|-----|-----|-------------|-------|
+    | 🥇 Fastest | Deepgram nova-3 | Groq `llama-3.3-70b-versatile` | Cartesia Sonic | ~500 ms | Groq TTFT ~150ms; Cartesia purpose-built for RT voice |
+    | 🥈 Balanced | Deepgram nova-3 | Groq `llama-3.1-8b-instant` | Cartesia Sonic | ~400 ms | 8b is faster but weaker reasoning |
+    | 🥉 Quality | Deepgram nova-3 | GPT-4o-mini | ElevenLabs Turbo v2.5 | ~700 ms | Better output quality, still streaming TTS |
+    | Current | Deepgram nova-3 | GPT-4o | OpenAI alloy | ~900 ms+ | Baseline — good quality, not optimised for latency |
+
+    **Key insight:** The biggest wins are:
+    - **LLM → switch to Groq** (`livekit-plugins-groq`) — TTFT drops from ~500ms to ~150ms
+    - **TTS → switch to Cartesia** (`livekit-plugins-cartesia`) — first-audio drops from ~400ms to ~100ms
+    - STT is already near-optimal with Deepgram nova-3
+
+  - **Packages needed:** `livekit-plugins-groq`, `livekit-plugins-cartesia`, `livekit-plugins-elevenlabs` — add as optional dependencies in `pyproject.toml`.
 
 - [ ] 28. Add WebRTC-based Smoke Test
   - Current smoke tests push PCM frames directly, bypassing WebRTC

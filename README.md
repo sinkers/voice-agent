@@ -171,16 +171,53 @@ This downloads the Silero VAD model (~50MB).
 ### 4. Run in dev mode
 
 ```bash
+make run
+```
+
+Or directly:
+```bash
 python agent.py dev
 ```
 
-The agent registers with LiveKit Cloud and waits for participants.
+The agent:
+1. Authenticates with the hosted hub (voice-agent-hub.fly.dev)
+2. Registers with LiveKit Cloud
+3. Prints a **Call URL** for testing
+4. Streams logs in real-time
+
+**Example output:**
+```
+================================================================================
+🎤 VOICE AGENT READY
+================================================================================
+
+📞 Call URL (for testing):
+   https://voice-agent-hub.fly.dev/call?agent_id=...
+
+================================================================================
+```
 
 ### 5. Connect and test
 
+**Option A: Use the hosted hub** (easiest)
+- Open the Call URL printed by `make run`
+- Browser asks for microphone permission
+- Start talking to test the agent
+
+**Option B: Use LiveKit Playground**
 1. Go to [agents-playground.livekit.io](https://agents-playground.livekit.io/)
 2. Enter your LiveKit Cloud URL + API key + secret
 3. Click **Connect** — the agent joins the room and greets you
+
+### 6. Useful commands
+
+```bash
+make run      # Start agent (prints call URL, streams logs)
+make stop     # Stop running agent
+make url      # Print call URL anytime
+make cleanup  # Remove cached credentials (requires re-auth)
+make test     # Run all unit tests
+```
 
 ---
 
