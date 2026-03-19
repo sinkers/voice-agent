@@ -1,4 +1,4 @@
-.PHONY: test test-py test-fe test-all lint install-test-deps run stop cleanup url
+.PHONY: test test-py test-fe test-all lint install-test-deps run stop cleanup url build-skill
 
 # Run the voice agent in dev mode (prints call URL and streams logs)
 # The call URL is printed after hub registration and remains valid while the agent runs
@@ -106,3 +106,16 @@ smoke-test:
 		exit 1; \
 	fi
 	uv run python tests/smoke_test.py
+
+# Build the OpenClaw skill package (livekit-voice.skill)
+# Creates a zip archive from skill/ directory contents
+build-skill:
+	@echo "==> Building OpenClaw skill package..."
+	@cd skill && rm -f livekit-voice.skill
+	@cd skill && zip -r livekit-voice.skill \
+		SKILL.md \
+		scripts/*.py \
+		scripts/*.sh \
+		assets/
+	@echo "Built: skill/livekit-voice.skill"
+	@ls -lh skill/livekit-voice.skill
