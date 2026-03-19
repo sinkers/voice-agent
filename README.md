@@ -148,9 +148,75 @@ Then edit `.env`:
 | `OPENCLAW_GATEWAY_URL` | Optional | Gateway URL. Defaults to `http://127.0.0.1:18789/v1` |
 | `OPENCLAW_AGENT_ID` | Optional | Which OpenClaw agent to use. Defaults to `main` |
 | `OPENCLAW_SESSION_KEY` | Optional | Pin to a specific session for shared memory. Omit for fresh session per call |
+| `OPENAI_TTS_VOICE` | Optional | TTS voice: `alloy` (default), `echo`, `fable`, `onyx`, `nova`, `shimmer` |
 
 > ⚠️ `.env` is gitignored. Never commit real credentials — use `.env.example` for the template.
 > See `.env.example` for full documentation on each variable.
+
+#### Voice Selection
+
+The agent supports 6 OpenAI TTS voices. Choose one by setting `OPENAI_TTS_VOICE` in `.env`:
+
+| Voice | Characteristics | Best For |
+|-------|-----------------|----------|
+| `alloy` | Neutral, balanced | Default, works for most use cases |
+| `echo` | Male, clear and articulate | Professional, business |
+| `fable` | British accent, expressive | Storytelling, engaging content |
+| `onyx` | Deep male voice, authoritative | Serious topics, announcements |
+| `nova` | Female, energetic and friendly | Upbeat interactions, customer service |
+| `shimmer` | Female, warm and soft | Calming, supportive conversations |
+
+**Listen to samples:** https://platform.openai.com/docs/guides/text-to-speech/voice-options
+
+**To change voice:**
+```bash
+# Edit .env
+OPENAI_TTS_VOICE=nova
+
+# Restart agent
+make stop
+make run
+```
+
+#### Alternative TTS Providers (Advanced)
+
+For lower latency or higher quality, you can switch to alternative TTS providers:
+
+| Provider | Latency | Quality | Setup |
+|----------|---------|---------|-------|
+| **OpenAI** | ~300ms | Good | Default, no extra install |
+| **Cartesia** | ~100ms | Good | `uv add livekit-plugins-cartesia` |
+| **ElevenLabs** | ~200ms | Excellent | `uv add livekit-plugins-elevenlabs` |
+
+**To use Cartesia (3x faster):**
+```bash
+# Install plugin
+uv add livekit-plugins-cartesia
+
+# Edit .env
+TTS_PROVIDER=cartesia
+CARTESIA_API_KEY=your_api_key
+CARTESIA_VOICE=sonic
+
+# Restart agent
+make stop && make run
+```
+
+**To use ElevenLabs (better quality):**
+```bash
+# Install plugin
+uv add livekit-plugins-elevenlabs
+
+# Edit .env
+TTS_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=your_api_key
+ELEVENLABS_VOICE=rachel
+
+# Restart agent
+make stop && make run
+```
+
+See `.env.example` for all configuration options.
 
 ### 2. Install dependencies
 

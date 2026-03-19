@@ -114,17 +114,37 @@ def main() -> None:
                 agent_id = choice or "main"
         agent_id = agent_id or "main"
 
+        # Prompt for TTS voice selection
+        print("\nAvailable TTS voices:")
+        voices = [
+            ("alloy", "Neutral, balanced (default)"),
+            ("echo", "Male, clear and articulate"),
+            ("fable", "British accent, expressive"),
+            ("onyx", "Deep male voice, authoritative"),
+            ("nova", "Female, energetic and friendly"),
+            ("shimmer", "Female, warm and soft"),
+        ]
+        for i, (voice_id, desc) in enumerate(voices, 1):
+            print(f"  {i}) {voice_id:8s} - {desc}")
+
+        voice_choice = input("\nSelect TTS voice [1-6, default: 1 (alloy)]: ").strip()
+        tts_voice = "alloy"
+        if voice_choice.isdigit() and 1 <= int(voice_choice) <= len(voices):
+            tts_voice = voices[int(voice_choice) - 1][0]
+
         # Patch .env with auto-detected values
         updates: dict[str, str] = {"OPENCLAW_GATEWAY_URL": gateway_url}
         if token:
             updates["OPENCLAW_GATEWAY_TOKEN"] = token
         updates["OPENCLAW_AGENT_ID"] = agent_id
+        updates["OPENAI_TTS_VOICE"] = tts_voice
         patch_env(env_file, updates)
 
         print("\nOpenClaw config applied:")
         print(f"  OPENCLAW_GATEWAY_URL={gateway_url}")
         print(f"  OPENCLAW_GATEWAY_TOKEN={'<set from openclaw.json>' if token else '<not found — set manually>'}")
         print(f"  OPENCLAW_AGENT_ID={agent_id}")
+        print(f"  OPENAI_TTS_VOICE={tts_voice}")
     else:
         print(".env already exists — skipping auto-population (edit manually if needed)")
 

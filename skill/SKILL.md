@@ -71,6 +71,29 @@ Auto-populated by setup (verify these are correct):
 - `OPENCLAW_GATEWAY_URL`
 - `OPENCLAW_GATEWAY_TOKEN`
 - `OPENCLAW_AGENT_ID`
+- `OPENAI_TTS_VOICE` — selected during setup, can be changed anytime
+
+### Voice Selection
+
+During setup, you'll be prompted to choose a TTS voice. Options:
+
+| Voice | Characteristics |
+|-------|-----------------|
+| `alloy` | Neutral, balanced (default) |
+| `echo` | Male, clear and articulate |
+| `fable` | British accent, expressive |
+| `onyx` | Deep male voice, authoritative |
+| `nova` | Female, energetic and friendly |
+| `shimmer` | Female, warm and soft |
+
+**To change voice after installation:**
+1. Edit `<install_path>/.env`
+2. Set `OPENAI_TTS_VOICE=nova` (or any voice above)
+3. Run `python3 scripts/stop.py && python3 scripts/start.py`
+
+**Listen to voice samples:** https://platform.openai.com/docs/guides/text-to-speech/voice-options
+
+**Advanced:** For faster TTS (~100ms vs ~300ms), see `.env.example` for Cartesia configuration.
 
 Optional:
 - `OPENCLAW_SESSION_KEY` — pin voice calls to a specific session for shared memory across channels. To share context with an existing chat session (e.g. Telegram), ask the agent "what is your session key?" and use that value. Must be in the format `agent:<agent_id>:<channel>:<id>`.
