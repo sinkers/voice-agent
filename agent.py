@@ -8,6 +8,7 @@ import platform
 import threading
 import time
 import uuid
+from typing import Any, Callable, TypedDict
 
 import httpx
 from dotenv import load_dotenv
@@ -41,6 +42,23 @@ HUB_HEARTBEAT_INTERVAL = 30.0  # Time between heartbeat requests
 HUB_DEVICE_AUTH_POLL_INTERVAL = 3.0  # Time between device auth polls
 
 logger = logging.getLogger("voice-agent")
+
+
+# Type definitions for hub API responses
+class HubConfig(TypedDict, total=False):
+    """Configuration returned from hub /agent/config endpoint."""
+    livekit_url: str
+    livekit_api_key: str
+    livekit_api_secret: str
+    deepgram_api_key: str
+    openai_api_key: str
+    display_name: str
+
+
+class HubRegisterResponse(TypedDict):
+    """Response from hub /agent/register endpoint."""
+    agent_id: str
+    call_url_base: str
 
 
 @contextlib.contextmanager
@@ -285,7 +303,7 @@ async def entrypoint(ctx: JobContext) -> None:
         logger.info("Agent entrypoint cleanup complete for room: %s", ctx.room.name)
 
 
-def prewarm(proc) -> None:
+def prewarm(proc: Any) -> None:
     proc.userdata["vad"] = silero.VAD.load()
 
 
@@ -365,7 +383,7 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
     raise SystemExit(1)
 
 
-def _hub_get_config(hub_url: str, token: str, base_name: str) -> dict:
+def _hub_get_config(hub_url: str, token: str, base_name: str) -> HubConfig:
     """Fetch agent config from hub. Returns config dict.
     Raises ValueError if token is invalid (caller should re-auth).
     Raises RuntimeError for network or server errors."""
@@ -404,7 +422,7 @@ def _hub_get_config(hub_url: str, token: str, base_name: str) -> dict:
         raise RuntimeError(f"Failed to parse hub response as JSON: {resp.text[:200]}") from exc
 
 
-def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, config: dict, base_name: str) -> str:
+def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, config: HubConfig, base_name: str) -> str:
     """Register agent with hub, persist agent_id, return call_url_base.
     Raises RuntimeError on network or server errors."""
     _here = os.path.dirname(os.path.abspath(__file__))
@@ -457,7 +475,7 @@ def _hub_register(hub_url: str, token: str, agent_name: str, display_name: str, 
 class HeartbeatThread:
     """Manages periodic heartbeat requests to the hub in a background thread."""
 
-    def __init__(self, hub_url: str, token_getter: callable):
+    def __init__(self, hub_url: str, token_getter: Callable[[], str]):
         """Initialize heartbeat thread.
 
         Args:
@@ -471,7 +489,7 @@ class HeartbeatThread:
         self.failure_count = 0
         self.max_failures = 10  # Stop logging after this many consecutive failures
 
-    def _loop(self):
+    def _loop(self) -> None:
         """Background thread loop that sends heartbeats."""
         while not self.shutdown_event.is_set():
             # Use wait() instead of sleep() so shutdown is responsive
@@ -498,7 +516,7 @@ class HeartbeatThread:
                 elif self.failure_count == self.max_failures + 1:
                     logger.error("Heartbeat failing repeatedly, suppressing further warnings")
 
-    def start(self):
+    def start(self) -> None:
         """Start the heartbeat thread."""
         if self.thread is not None:
             logger.warning("Heartbeat thread already started")
@@ -507,7 +525,7 @@ class HeartbeatThread:
         self.thread.start()
         logger.info("Heartbeat thread started")
 
-    def stop(self, timeout=5.0):
+    def stop(self, timeout: float = 5.0) -> None:
         """Stop the heartbeat thread gracefully.
 
         Args:
