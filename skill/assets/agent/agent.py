@@ -57,6 +57,50 @@ def _create_llm() -> openai.LLM:
 _llm = _create_llm()
 
 
+def _create_tts():
+    """Create the TTS provider based on environment configuration.
+
+    Supports multiple providers with automatic fallback to OpenAI.
+    """
+    provider = os.getenv("TTS_PROVIDER", "openai").lower()
+
+    if provider == "cartesia":
+        try:
+            from livekit.plugins import cartesia
+
+            voice = os.getenv("CARTESIA_VOICE", "sonic")
+            api_key = os.getenv("CARTESIA_API_KEY")
+            if not api_key:
+                logger.warning("CARTESIA_API_KEY not set, falling back to OpenAI TTS")
+            else:
+                logger.info("TTS: using Cartesia with voice=%s", voice)
+                return cartesia.TTS(voice=voice, api_key=api_key)
+        except ImportError:
+            logger.warning("livekit-plugins-cartesia not installed, falling back to OpenAI TTS")
+
+    if provider == "elevenlabs":
+        try:
+            from livekit.plugins import elevenlabs
+
+            voice = os.getenv("ELEVENLABS_VOICE", "rachel")
+            api_key = os.getenv("ELEVENLABS_API_KEY")
+            if not api_key:
+                logger.warning("ELEVENLABS_API_KEY not set, falling back to OpenAI TTS")
+            else:
+                logger.info("TTS: using ElevenLabs with voice=%s", voice)
+                return elevenlabs.TTS(voice=voice, api_key=api_key)
+        except ImportError:
+            logger.warning("livekit-plugins-elevenlabs not installed, falling back to OpenAI TTS")
+
+    # Default: OpenAI TTS
+    voice = os.getenv("OPENAI_TTS_VOICE", "alloy")
+    logger.info("TTS: using OpenAI with voice=%s", voice)
+    return openai.TTS(voice=voice)
+
+
+_tts = _create_tts()
+
+
 VOICE_INSTRUCTIONS = """
 You are responding via a real-time voice call. Your responses will be spoken aloud by a
 text-to-speech engine, so format them accordingly.
@@ -85,17 +129,13 @@ class VoiceAssistant(Agent):
 async def entrypoint(ctx: JobContext) -> None:
     logger.info("Agent connecting to room: %s", ctx.room.name)
 
-    # Get TTS voice from environment (default: alloy)
-    tts_voice = os.getenv("OPENAI_TTS_VOICE", "alloy")
-
     try:
         session = AgentSession(
             stt=deepgram.STT(model="nova-3"),
             llm=_llm,
-            tts=openai.TTS(voice=tts_voice),
+            tts=_tts,
             vad=ctx.proc.userdata["vad"],
         )
-        logger.info("Agent session configured with TTS voice: %s", tts_voice)
 
         await session.start(
             agent=VoiceAssistant(),
