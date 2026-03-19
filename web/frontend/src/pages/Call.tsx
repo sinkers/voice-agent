@@ -6,8 +6,6 @@ import {
   useRemoteParticipants,
   useRoomContext,
   useVoiceAssistant,
-  useLocalParticipant,
-  useTracks,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { ConnectionState } from "livekit-client";
