@@ -1,4 +1,14 @@
-.PHONY: test test-py test-fe test-all lint install-test-deps
+.PHONY: test test-py test-fe test-all lint install-test-deps run
+
+# Run the voice agent in dev mode (prints call URL and streams logs)
+# The call URL is printed after hub registration and remains valid while the agent runs
+# Logs are streamed to stdout in real-time
+run:
+	@echo "==> Starting voice agent in dev mode..."
+	@echo "==> The call URL will be printed after registration with the hub"
+	@echo "==> Logs will stream below (press Ctrl+C to stop)"
+	@echo ""
+	uv run python agent.py dev
 
 # Run all unit tests: Python + frontend
 test: test-py test-fe
