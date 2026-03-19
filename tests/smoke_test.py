@@ -159,22 +159,27 @@ async def _collect_agent_audio(lk_token: str, lk_url: str,
     room = rtc.Room()
     agent_frames: list = []
     agent_speaking = asyncio.Event()
+    collect_tasks: list[asyncio.Task] = []
 
     @room.on("track_subscribed")
     def on_track(track, pub, participant):
         if track.kind == rtc.TrackKind.KIND_AUDIO and participant.identity != "caller":
             stream = rtc.AudioStream(track)
             async def collect():
-                async for fe in stream:
-                    # Only keep non-silent frames so the drain loop can detect
-                    # when the agent stops speaking (LiveKit streams silence
-                    # continuously — appending all frames means the frame count
-                    # never stabilises and the drain loop runs forever).
-                    raw = bytes(fe.frame.data)
-                    if any(b != 0 for b in raw[::SILENCE_CHECK_SAMPLE_INTERVAL]):
-                        agent_frames.append(fe.frame)
-                        agent_speaking.set()
-            asyncio.create_task(collect())
+                try:
+                    async for fe in stream:
+                        # Only keep non-silent frames so the drain loop can detect
+                        # when the agent stops speaking (LiveKit streams silence
+                        # continuously — appending all frames means the frame count
+                        # never stabilises and the drain loop runs forever).
+                        raw = bytes(fe.frame.data)
+                        if any(b != 0 for b in raw[::SILENCE_CHECK_SAMPLE_INTERVAL]):
+                            agent_frames.append(fe.frame)
+                            agent_speaking.set()
+                except asyncio.CancelledError:
+                    pass  # Clean shutdown
+            task = asyncio.create_task(collect())
+            collect_tasks.append(task)
 
     await room.connect(lk_url, lk_token)
 
@@ -201,6 +206,10 @@ async def _collect_agent_audio(lk_token: str, lk_url: str,
     try:
         await asyncio.wait_for(agent_speaking.wait(), timeout=wait_for_speech_s)
     except asyncio.TimeoutError:
+        # Cancel background tasks before disconnect
+        for task in collect_tasks:
+            task.cancel()
+        await asyncio.gather(*collect_tasks, return_exceptions=True)
         await room.disconnect()
         raise RuntimeError(f"Agent did not speak within {wait_for_speech_s:.0f}s — is the agent worker running?")
 
@@ -215,6 +224,11 @@ async def _collect_agent_audio(lk_token: str, lk_url: str,
         if len(agent_frames) == last_len or elapsed >= MAX_DRAIN_S:
             break
         last_len = len(agent_frames)
+
+    # Cancel and wait for background tasks before disconnect
+    for task in collect_tasks:
+        task.cancel()
+    await asyncio.gather(*collect_tasks, return_exceptions=True)
 
     await room.disconnect()
     return agent_frames
@@ -306,20 +320,25 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
     agent_frames: list = []
     greeting_started = asyncio.Event()
     collecting = False   # only True after question is fully published
+    collect_tasks: list[asyncio.Task] = []
 
     @room.on("track_subscribed")
     def on_track(track, pub, participant):
         if track.kind == rtc.TrackKind.KIND_AUDIO and participant.identity != "caller":
             stream = rtc.AudioStream(track)
             async def collect():
-                async for fe in stream:
-                    raw = bytes(fe.frame.data)
-                    is_speech = any(b != 0 for b in raw[::50])
-                    if is_speech and not greeting_started.is_set():
-                        greeting_started.set()
-                    if collecting and is_speech:
-                        agent_frames.append(fe.frame)
-            asyncio.create_task(collect())
+                try:
+                    async for fe in stream:
+                        raw = bytes(fe.frame.data)
+                        is_speech = any(b != 0 for b in raw[::SILENCE_CHECK_SAMPLE_INTERVAL])
+                        if is_speech and not greeting_started.is_set():
+                            greeting_started.set()
+                        if collecting and is_speech:
+                            agent_frames.append(fe.frame)
+                except asyncio.CancelledError:
+                    pass  # Clean shutdown
+            task = asyncio.create_task(collect())
+            collect_tasks.append(task)
 
     await room.connect(conn["url"], conn["token"])
 
@@ -350,19 +369,23 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
     collecting = True
 
     # Push PCM frames
-    chunk_bytes = 960
+    chunk_bytes = BYTES_PER_FRAME
     for i in range(0, len(pcm), chunk_bytes):
         chunk = pcm[i:i + chunk_bytes].ljust(chunk_bytes, b"\x00")
         frame = rtc.AudioFrame(
-            data=chunk, sample_rate=48000, num_channels=1, samples_per_channel=480
+            data=chunk, sample_rate=AUDIO_SAMPLE_RATE, num_channels=AUDIO_CHANNELS, samples_per_channel=SAMPLES_PER_FRAME
         )
         await source.capture_frame(frame)
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(FRAME_DURATION_S)
 
     # Wait for response frames to arrive (up to 20s)
     deadline = asyncio.get_event_loop().time() + RESPONSE_WAIT_TIMEOUT
     while not agent_frames:
         if asyncio.get_event_loop().time() >= deadline:
+            # Cancel background tasks before disconnect
+            for task in collect_tasks:
+                task.cancel()
+            await asyncio.gather(*collect_tasks, return_exceptions=True)
             await room.disconnect()
             raise RuntimeError("Agent did not respond to question within 20s")
         await asyncio.sleep(0.5)
@@ -375,6 +398,11 @@ async def _audio_response_flow(agent_id: str, pcm: bytes) -> list:
         if len(agent_frames) == last_len:
             break
         last_len = len(agent_frames)
+
+    # Cancel and wait for background tasks before disconnect
+    for task in collect_tasks:
+        task.cancel()
+    await asyncio.gather(*collect_tasks, return_exceptions=True)
 
     await room.disconnect()
     return agent_frames
