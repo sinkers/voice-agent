@@ -31,6 +31,7 @@ import asyncio
 import io
 import os
 import sys
+import time
 import wave
 from pathlib import Path
 
@@ -189,11 +190,11 @@ async def _collect_agent_audio(lk_token: str, lk_url: str,
     # Drain: wait for silence (no new non-silent frames in drain_silence_s),
     # but cap total drain time at 15 s so the loop never runs forever.
     MAX_DRAIN_S = 15.0
-    drain_start = asyncio.get_event_loop().time()
+    drain_start = time.monotonic()
     last_len = len(agent_frames)
     while True:
         await asyncio.sleep(drain_silence_s)
-        elapsed = asyncio.get_event_loop().time() - drain_start
+        elapsed = time.monotonic() - drain_start
         if len(agent_frames) == last_len or elapsed >= MAX_DRAIN_S:
             break
         last_len = len(agent_frames)
