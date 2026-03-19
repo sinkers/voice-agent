@@ -98,13 +98,19 @@ async def entrypoint(ctx: JobContext) -> None:
 
     @ctx.room.on("track_subscribed")
     def _dbg_track(track, pub, participant):
-        logger.info("[debug] track_subscribed: kind=%s source=%s participant=%s",
-                    track.kind, pub.source, participant.identity)
+        try:
+            logger.info("[debug] track_subscribed: kind=%s source=%s participant=%s",
+                        track.kind, pub.source, participant.identity)
+        except Exception as exc:
+            logger.exception("Error in track_subscribed handler: %s", exc)
 
     @ctx.room.on("track_published")
     def _dbg_pub(pub, participant):
-        logger.info("[debug] track_published: source=%s participant=%s subscribed=%s",
-                    pub.source, participant.identity, pub.subscribed)
+        try:
+            logger.info("[debug] track_published: source=%s participant=%s subscribed=%s",
+                        pub.source, participant.identity, pub.subscribed)
+        except Exception as exc:
+            logger.exception("Error in track_published handler: %s", exc)
 
     _t: dict = {}
 
@@ -118,38 +124,56 @@ async def entrypoint(ctx: JobContext) -> None:
 
         @session.on("user_started_speaking")
         def _on_speech_start(_evt):
-            _t["speech_start"] = time.perf_counter()
+            try:
+                _t["speech_start"] = time.perf_counter()
+            except Exception as exc:
+                logger.exception("Error in user_started_speaking handler: %s", exc)
 
         @session.on("user_stopped_speaking")
         def _on_speech_end(_evt):
-            if "speech_start" in _t:
-                _t["speech_end"] = time.perf_counter()
-                logger.info("[timing] speech=%.3fs", _t["speech_end"] - _t["speech_start"])
+            try:
+                if "speech_start" in _t:
+                    _t["speech_end"] = time.perf_counter()
+                    logger.info("[timing] speech=%.3fs", _t["speech_end"] - _t["speech_start"])
+            except Exception as exc:
+                logger.exception("Error in user_stopped_speaking handler: %s", exc)
 
         @session.on("user_input_transcribed")
         def _on_transcribed(evt):
-            _t["stt_done"] = time.perf_counter()
-            ref = _t.get("speech_end") or _t.get("speech_start")
-            if ref:
-                logger.info("[timing] stt_latency=%.3fs transcript=%r",
-                            _t["stt_done"] - ref, getattr(evt, "transcript", ""))
+            try:
+                _t["stt_done"] = time.perf_counter()
+                ref = _t.get("speech_end") or _t.get("speech_start")
+                if ref:
+                    logger.info("[timing] stt_latency=%.3fs transcript=%r",
+                                _t["stt_done"] - ref, getattr(evt, "transcript", ""))
+            except Exception as exc:
+                logger.exception("Error in user_input_transcribed handler: %s", exc)
 
         @session.on("agent_started_speaking")
         def _on_agent_speak(_evt):
-            _t["tts_start"] = time.perf_counter()
-            if "stt_done" in _t:
-                logger.info("[timing] stt_to_audio=%.3fs (LLM+TTS)",
-                            _t["tts_start"] - _t["stt_done"])
+            try:
+                _t["tts_start"] = time.perf_counter()
+                if "stt_done" in _t:
+                    logger.info("[timing] stt_to_audio=%.3fs (LLM+TTS)",
+                                _t["tts_start"] - _t["stt_done"])
+            except Exception as exc:
+                logger.exception("Error in agent_started_speaking handler: %s", exc)
 
         @session.on("agent_stopped_speaking")
         def _on_agent_done(_evt):
-            if "tts_start" in _t:
-                logger.info("[timing] agent_speaking=%.3fs",
-                            time.perf_counter() - _t["tts_start"])
+            try:
+                if "tts_start" in _t:
+                    logger.info("[timing] agent_speaking=%.3fs",
+                                time.perf_counter() - _t["tts_start"])
+            except Exception as exc:
+                logger.exception("Error in agent_stopped_speaking handler: %s", exc)
 
         @session.on("input_speech_started")
         def _dbg_input(_evt):
-            logger.info("[debug] input_speech_started fired")
+            try:
+                logger.info("[debug] input_speech_started fired")
+            except Exception as exc:
+                logger.exception("Error in input_speech_started handler: %s", exc)
 
         await session.start(
             agent=VoiceAssistant(),
