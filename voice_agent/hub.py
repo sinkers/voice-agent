@@ -86,7 +86,7 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
         delay = exponential_backoff_with_jitter(
             poll_attempt,
             base_delay=HUB_DEVICE_AUTH_POLL_INTERVAL,
-            max_delay=min(HUB_DEVICE_AUTH_POLL_INTERVAL * 4, 15.0),  # Cap at 15s
+            max_delay=15.0,  # Cap at 15s
             jitter_factor=0.3,
         )
         time.sleep(delay)

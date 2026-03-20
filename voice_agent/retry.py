@@ -47,6 +47,7 @@ def retry_with_backoff(
     max_attempts: int = 3,
     base_delay: float = 1.0,
     max_delay: float = 60.0,
+    jitter_factor: float = 0.3,
     retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
 ) -> T:
     """Retry a function with exponential backoff.
@@ -56,6 +57,7 @@ def retry_with_backoff(
         max_attempts: Maximum number of attempts
         base_delay: Base delay in seconds
         max_delay: Maximum delay in seconds
+        jitter_factor: Amount of randomness to add to delays (0.0-1.0)
         retryable_exceptions: Tuple of exception types to retry on
 
     Returns:
@@ -72,7 +74,7 @@ def retry_with_backoff(
         except retryable_exceptions as exc:
             last_exception = exc
             if attempt < max_attempts - 1:
-                delay = exponential_backoff_with_jitter(attempt, base_delay, max_delay)
+                delay = exponential_backoff_with_jitter(attempt, base_delay, max_delay, jitter_factor)
                 time.sleep(delay)
 
     # All retries exhausted
