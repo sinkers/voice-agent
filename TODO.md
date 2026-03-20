@@ -1,15 +1,15 @@
 # Voice Agent Code Review TODO
 
 Generated: 2026-03-19
-Last Updated: 2026-03-20 (Mypy Type Checking Added)
+Last Updated: 2026-03-20 (Mypy + Refactoring Complete)
 
 ## 📊 PROGRESS SUMMARY
 
-**Completed:** 19/30 issues (63%)
+**Completed:** 20/30 issues (67%)
 **Critical Issues:** 4/4 fixed ✅ (100%)
 **Major Issues:** 3/4 fixed ✅ (75%)
 **Moderate Issues:** 5/5 fixed ✅ (100%)
-**Code Quality:** 7/11 fixed (64%)
+**Code Quality:** 8/11 fixed (73%)
 
 ### Latest Session Improvements
 - ✅ CI configuration fixed (skip integration/smoke tests)
@@ -68,18 +68,24 @@ Last Updated: 2026-03-20 (Mypy Type Checking Added)
   - Consider moving to `__main__` to avoid surprising env overrides; tests currently patch this.
 
 - [x] 23. Add Comprehensive Linting to CI ✅
+<<<<<<< HEAD
   - FIXED: Added mypy type checking to CI and Makefile (PR #19)
   - ruff (linting + formatting) was already in place
   - mypy now runs on every commit and PR
   - Fixed type annotations and added type ignores for library issues
   - All 69 tests passing with mypy checks
+=======
+  - FIXED: ruff (linting + formatting) already in place
+  - FIXED: mypy type checking added (PR #19 pending)
+  - Runs on every commit and PR
+  - Enforces consistent code style across codebase
+>>>>>>> a750a57 (docs: update TODO - mark items 23, 24, 30 as complete (20/30 done))
 
-- [ ] 24. Add Security Scanner to CI
-  - Add security scanning to CI workflow
-  - Tools to consider: bandit (Python security linter), safety (dependency vulnerability scanner)
-  - Scan for common vulnerabilities (OWASP top 10)
-  - Check dependencies for known CVEs
-  - Should run on every PR and scheduled weekly
+- [x] 24. Add Security Scanner to CI ✅
+  - FIXED: bandit security scanner in Makefile and CI (commit 4031442)
+  - Scans for common vulnerabilities (OWASP top 10)
+  - Runs on every PR
+  - Can add safety for dependency CVE scanning later if needed
 
 - [ ] 25. Document Self-Hosting Options
   - Current setup uses hosted hub (voice-agent-hub.fly.dev)
@@ -159,25 +165,13 @@ Last Updated: 2026-03-20 (Mypy Type Checking Added)
   - **5 — Backwards compatibility**
     - Existing single-agent installs should keep working; detect old layout and migrate or document the path change.
 
-- [ ] 30. Configurable TTS Voice Selection
-  - **Goal:** Allow the voice to be configured per-agent rather than hardcoded to `"alloy"`.
-  - **Current:** `agent.py:92` — `tts=openai.TTS(voice="alloy")` is hardcoded.
-  - **Fix:**
-    - Add `OPENAI_TTS_VOICE` to `.env` / `env.example` (default: `alloy`).
-    - Read it in `agent.py` at startup: `openai.TTS(voice=os.getenv("OPENAI_TTS_VOICE", "alloy"))`.
-    - Document the available voices in `env.example` with gender labels:
-
-      | Voice | Gender | Character |
-      |-------|--------|-----------|
-      | `alloy` | Neutral | Default |
-      | `echo` | Male | Soft |
-      | `fable` | Male | Expressive |
-      | `onyx` | Male | Deep |
-      | `nova` | Female | Warm |
-      | `shimmer` | Female | Clear |
-
-    - During `setup.py`, optionally prompt the user to choose a voice (or accept the default).
-  - **Note:** If item 29 (multi-agent install) is implemented first, `OPENAI_TTS_VOICE` belongs in the per-agent `.env` so different agents can have different voices.
+- [x] 30. Configurable TTS Voice Selection ✅
+  - FIXED: OPENAI_TTS_VOICE env var added (commit 660d39a)
+  - FIXED: Support for Cartesia and ElevenLabs TTS providers (commit c398437)
+  - FIXED: Comprehensive voice selection documentation (commit 1f3ea07)
+  - FIXED: Interactive voice selection in setup.py
+  - All voices documented in env.example with gender labels
+  - Note: With multi-agent install (item 29), each agent can have different voices
 
 - [ ] 31. Pipeline Latency Benchmarking and Fast-Model Recommendations
   - **Goal:** Measure end-to-end and per-stage latency across interchangeable STT/LLM/TTS providers so the fastest configuration for voice can be identified and documented.
@@ -336,6 +330,65 @@ Last Updated: 2026-03-20 (Mypy Type Checking Added)
   - Creates false positives - test passes but real browser clients may fail
   - Need smoke test using livekit-client SDK to simulate actual browser connection
   - Should use Room.connect() and publish LocalAudioTrack via WebRTC
+
+- [ ] 36. Add `make cover` Code Coverage Target (Both Repos)
+  - **voice-agent:**
+    - Add `pytest-cov` to dev dependencies if not already present.
+    - Add `cover` target to `Makefile`:
+      ```makefile
+      cover:
+          uv run pytest -m "not integration" --cov=. --cov-report=term-missing --cov-report=html
+          @echo "HTML report: htmlcov/index.html"
+      ```
+    - Sources to cover: `agent.py`, `web/backend/`, `skill/scripts/`
+    - Add to `AGENTS.md` Tests section: "Run `make cover` to check coverage — coverage must not decrease."
+  - **voice-agent-hub:**
+    - Add `pytest-cov` to dev dependencies if not already present (hub AGENTS.md already documents the raw command).
+    - Add `cover` target to `Makefile`:
+      ```makefile
+      cover:
+          uv run pytest tests/ --cov=backend --cov-report=term-missing --cov-report=html
+          @echo "HTML report: htmlcov/index.html"
+      ```
+    - Add `make cover` row to the Quick Reference table in `AGENTS.md`.
+    - Update the pre-commit checklist to include `make cover` (coverage must not decrease).
+
+- [ ] 35. Redesign `Call.tsx` — Phone Call UI
+  - **Goal:** Replace the current minimal debug layout with a proper phone-call-style screen. Currently `AgentUI` is a centred badge + subtitle + 5 fixed bars; `MicrophoneSelector` is a fixed top-right dropdown; the mute button is buried inside LiveKit's `<ControlBar>`.
+
+  - **1 — Phone-call layout (`AgentUI`)**
+    - Large circular avatar centred on screen (80–100px diameter). Use agent initials as a fallback since there's no image URL yet.
+    - Agent display name (`connectResult.agent`) as the primary heading below the avatar.
+    - State label (`Listening`, `Thinking`, `Speaking`, `Connecting`) as a smaller subtitle beneath the name.
+    - Remove the existing badge / text hint — the avatar + state label replace all of that.
+
+  - **2 — Big mute button**
+    - A single large circle button (64px) centred at the bottom of the screen — the dominant interactive element, like a phone call.
+    - Shows mic icon when unmuted, crossed-mic icon when muted. Red when muted, dark/neutral when live.
+    - Replaces `<ControlBar controls={{ microphone: true, ... }}>` which is currently the only mute affordance.
+    - Wire via `room.localParticipant.setMicrophoneEnabled(toggle)`.
+
+  - **3 — Mic selector: always visible, icon-driven**
+    - Remove the `if (audioDevices.length <= 1) return null` guard — always show the selected device name.
+    - Replace the fixed top-right dropdown with a mic icon button adjacent to the mute button. Clicking it opens a popover listing available devices with a checkmark next to the active one.
+    - Display the active device label (truncated to ~30 chars) as a caption under the mic icon so it's always visible without opening the selector.
+    - `useMediaDeviceSelect` is already wired in `MicrophoneSelector` — keep that hook, change the presentation.
+
+  - **4 — `BarVisualizer` for input and agent audio**
+    - Replace `AudioLevelIndicator`'s 5 fixed bars with `<BarVisualizer>` from `@livekit/components-react` (already in node_modules).
+    - **User input:** `BarVisualizer` driven by the local mic `TrackReference` (from `useTracks`), visible whenever the mic is live.
+    - **Agent audio:** `BarVisualizer` driven by `audioTrack` from `useVoiceAssistant()`, with `state` prop passed so it automatically animates through connecting/listening/thinking states and switches to real audio amplitude when speaking.
+    - Usage pattern: `<BarVisualizer state={vaState} trackRef={audioTrack} barCount={20} />`
+    - The two visualizers are labelled "You" and the agent name so it's clear which is which.
+    - Note: `BarVisualizer` is multiband frequency bars, not a time-domain oscilloscope. If a true waveform is wanted later, `createAudioAnalyser` from `livekit-client` (already a dependency) can be used with a canvas — no extra packages needed.
+
+  - **5 — Animated avatar ring when agent is speaking (bonus)**
+    - When `state === "speaking"`, add a pulsing ring animation around the avatar circle.
+    - Use `useTrackVolume(audioTrack)` to drive the ring scale inline (`scale(1 + volume * 0.15)`) so it breathes with the speech amplitude rather than a fixed CSS loop.
+    - Pure CSS + inline style — no animation libraries needed.
+
+  - **File to change:** `voice-agent-hub/frontend/src/pages/Call.tsx` (single file, all components are local).
+  - **LK hooks/components already available:** `useVoiceAssistant`, `useTrackVolume`, `useTracks`, `useMediaDeviceSelect`, `<BarVisualizer>` — no new dependencies required.
 
 ## NOTES
 
