@@ -100,16 +100,19 @@ class TestHubFirstRun:
 
     @patch("agent.httpx.Client")
     def test_handles_network_error(self, mock_client):
-        """Network errors should raise RuntimeError with context."""
+        """Network errors should be retried then raise ConnectError."""
         from agent import _hub_get_config
 
-        # Mock connection error
+        # Mock connection error - will be retried 3 times
         mock_client.return_value.__enter__.return_value.get.side_effect = httpx.ConnectError("Connection refused")
 
-        with pytest.raises(RuntimeError) as exc_info:
+        # After retries are exhausted, ConnectError is raised
+        with pytest.raises(httpx.ConnectError) as exc_info:
             _hub_get_config("https://test-hub.com", "test_token", "test-agent")
 
-        assert "Failed to connect to hub" in str(exc_info.value)
+        assert "Connection refused" in str(exc_info.value)
+        # Verify it was retried (3 attempts total)
+        assert mock_client.return_value.__enter__.return_value.get.call_count == 3
 
     @patch("agent.httpx.Client")
     def test_handles_timeout(self, mock_client):

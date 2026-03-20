@@ -9,6 +9,7 @@ import time
 import httpx
 
 from .constants import HUB_DEVICE_AUTH_POLL_INTERVAL, HUB_REQUEST_TIMEOUT, HubConfig
+from .retry import exponential_backoff_with_jitter, retry_with_backoff
 
 logger = logging.getLogger("voice-agent")
 
@@ -79,15 +80,25 @@ def _hub_authenticate(hub_url: str, base_name: str) -> str:
     print("[agent] Waiting for sign-in approval...")
 
     deadline = time.time() + expires_in
+    poll_attempt = 0
     while time.time() < deadline:
-        time.sleep(HUB_DEVICE_AUTH_POLL_INTERVAL)
+        # Use exponential backoff with jitter to avoid thundering herd
+        delay = exponential_backoff_with_jitter(
+            poll_attempt,
+            base_delay=HUB_DEVICE_AUTH_POLL_INTERVAL,
+            max_delay=15.0,  # Cap at 15s
+            jitter_factor=0.3,
+        )
+        time.sleep(delay)
+        poll_attempt += 1
+
         try:
             with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
                 resp = client.get(f"{hub_url}/auth/device/token", params={"code": device_code})
                 resp.raise_for_status()
                 result = resp.json()
         except httpx.RequestError as exc:
-            logger.warning("Device auth poll failed, will retry: %s", exc)
+            logger.warning("Device auth poll failed, will retry with backoff: %s", exc)
             continue
         except Exception as exc:
             logger.warning("Failed to parse device auth poll response, will retry: %s", exc)
@@ -124,38 +135,59 @@ def _hub_get_config(hub_url: str, token: str, base_name: str) -> HubConfig:
     Raises ValueError if token is invalid (caller should re-auth).
     Raises RuntimeError for network or server errors."""
     _here = os.path.dirname(os.path.abspath(__file__))
-    try:
-        with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
-            resp = client.get(
-                f"{hub_url}/agent/config",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-    except httpx.TimeoutException as exc:
-        raise RuntimeError(f"Hub request timed out after {HUB_REQUEST_TIMEOUT}s: {hub_url}") from exc
-    except httpx.ConnectError as exc:
-        raise RuntimeError(f"Failed to connect to hub: {hub_url}") from exc
-    except httpx.RequestError as exc:
-        raise RuntimeError(f"Hub request failed: {exc}") from exc
 
-    if resp.status_code == 401:
-        # Token expired — delete it so next call triggers re-auth
-        token_file = os.path.join(_here, f".hub-token-{base_name}")
-        if os.path.exists(token_file):
-            try:
-                os.remove(token_file)
-            except OSError as exc:
-                logger.warning("Failed to remove expired token file: %s", exc)
-        raise ValueError("hub token invalid or expired")
+    def _make_request() -> HubConfig:
+        try:
+            with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
+                resp = client.get(
+                    f"{hub_url}/agent/config",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(f"Hub request timed out after {HUB_REQUEST_TIMEOUT}s: {hub_url}") from exc
+        except httpx.ConnectError as exc:
+            # Retryable: connection errors are often transient
+            raise
+        except httpx.RequestError as exc:
+            raise RuntimeError(f"Hub request failed: {exc}") from exc
 
-    try:
-        resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise RuntimeError(f"Hub returned error {resp.status_code}: {resp.text}") from exc
+        if resp.status_code == 401:
+            # Token expired — delete it so next call triggers re-auth
+            token_file = os.path.join(_here, f".hub-token-{base_name}")
+            if os.path.exists(token_file):
+                try:
+                    os.remove(token_file)
+                except OSError as exc:
+                    logger.warning("Failed to remove expired token file: %s", exc)
+            raise ValueError("hub token invalid or expired")
 
+        # Retry on 5xx server errors (transient)
+        if 500 <= resp.status_code < 600:
+            raise RuntimeError(f"Hub server error {resp.status_code}, retrying")
+
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # Don't retry on 4xx client errors (except 401 handled above)
+            raise RuntimeError(f"Hub returned error {resp.status_code}: {resp.text}") from exc
+
+        try:
+            return resp.json()
+        except Exception as exc:
+            raise RuntimeError(f"Failed to parse hub response as JSON: {resp.text[:200]}") from exc
+
+    # Retry on connection errors and 5xx server errors
     try:
-        return resp.json()
-    except Exception as exc:
-        raise RuntimeError(f"Failed to parse hub response as JSON: {resp.text[:200]}") from exc
+        return retry_with_backoff(
+            _make_request,
+            max_attempts=3,
+            base_delay=1.0,
+            max_delay=10.0,
+            retryable_exceptions=(httpx.ConnectError, RuntimeError),
+        )
+    except ValueError:
+        # Don't retry on auth errors
+        raise
 
 
 def _hub_register(
@@ -164,46 +196,65 @@ def _hub_register(
     """Register agent with hub, persist agent_id, return call_url_base.
     Raises RuntimeError on network or server errors."""
     _here = os.path.dirname(os.path.abspath(__file__))
-    try:
-        with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
-            resp = client.post(
-                f"{hub_url}/agent/register",
-                headers={"Authorization": f"Bearer {token}"},
-                json={
-                    "agent_name": agent_name,
-                    "display_name": display_name,
-                    "livekit_url": config.get("livekit_url", ""),
-                    "livekit_api_key": config.get("livekit_api_key", ""),
-                    "livekit_api_secret": config.get("livekit_api_secret", ""),
-                    "deepgram_api_key": config.get("deepgram_api_key", ""),
-                    "openai_api_key": config.get("openai_api_key", ""),
-                },
-            )
-    except httpx.RequestError as exc:
-        raise RuntimeError(f"Hub registration request failed: {exc}") from exc
 
-    try:
-        resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise RuntimeError(f"Hub registration failed with status {resp.status_code}: {resp.text}") from exc
+    def _make_request() -> str:
+        try:
+            with httpx.Client(timeout=HUB_REQUEST_TIMEOUT) as client:
+                resp = client.post(
+                    f"{hub_url}/agent/register",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={
+                        "agent_name": agent_name,
+                        "display_name": display_name,
+                        "livekit_url": config.get("livekit_url", ""),
+                        "livekit_api_key": config.get("livekit_api_key", ""),
+                        "livekit_api_secret": config.get("livekit_api_secret", ""),
+                        "deepgram_api_key": config.get("deepgram_api_key", ""),
+                        "openai_api_key": config.get("openai_api_key", ""),
+                    },
+                )
+        except httpx.ConnectError:
+            # Retryable: connection errors are often transient
+            raise
+        except httpx.RequestError as exc:
+            raise RuntimeError(f"Hub registration request failed: {exc}") from exc
 
-    try:
-        data = resp.json()
-    except Exception as exc:
-        raise RuntimeError(f"Failed to parse hub registration response: {resp.text[:200]}") from exc
+        # Retry on 5xx server errors (transient)
+        if 500 <= resp.status_code < 600:
+            raise RuntimeError(f"Hub server error {resp.status_code}, retrying")
 
-    if "agent_id" not in data or "call_url_base" not in data:
-        raise RuntimeError(f"Hub registration response missing required fields: {data}")
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # Don't retry on 4xx client errors
+            raise RuntimeError(f"Hub registration failed with status {resp.status_code}: {resp.text}") from exc
 
-    # Write agent ID atomically
-    agent_id_file = os.path.join(_here, f".hub-agent-id-{base_name}")
-    temp_path = f"{agent_id_file}.tmp"
-    with open(temp_path, "w") as f, _file_lock(f):
-        f.write(data["agent_id"])
-        f.flush()
-        os.fsync(f.fileno())
-    # Set secure permissions before making visible
-    os.chmod(temp_path, 0o600)
-    os.replace(temp_path, agent_id_file)
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise RuntimeError(f"Failed to parse hub registration response: {resp.text[:200]}") from exc
 
-    return data["call_url_base"]
+        if "agent_id" not in data or "call_url_base" not in data:
+            raise RuntimeError(f"Hub registration response missing required fields: {data}")
+
+        # Write agent ID atomically
+        agent_id_file = os.path.join(_here, f".hub-agent-id-{base_name}")
+        temp_path = f"{agent_id_file}.tmp"
+        with open(temp_path, "w") as f, _file_lock(f):
+            f.write(data["agent_id"])
+            f.flush()
+            os.fsync(f.fileno())
+        # Set secure permissions before making visible
+        os.chmod(temp_path, 0o600)
+        os.replace(temp_path, agent_id_file)
+
+        return data["call_url_base"]
+
+    # Retry on connection errors and 5xx server errors
+    return retry_with_backoff(
+        _make_request,
+        max_attempts=3,
+        base_delay=1.0,
+        max_delay=10.0,
+        retryable_exceptions=(httpx.ConnectError, RuntimeError),
+    )

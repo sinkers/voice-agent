@@ -7,6 +7,7 @@ from collections.abc import Callable
 import httpx
 
 from .constants import HUB_HEARTBEAT_INTERVAL, HUB_HEARTBEAT_TIMEOUT, HUB_REQUEST_TIMEOUT
+from .retry import exponential_backoff_with_jitter
 
 logger = logging.getLogger("voice-agent")
 
@@ -31,8 +32,21 @@ class HeartbeatThread:
     def _loop(self) -> None:
         """Background thread loop that sends heartbeats."""
         while not self.shutdown_event.is_set():
+            # Calculate interval with exponential backoff on failures
+            if self.failure_count > 0:
+                # On failure, use exponential backoff (capped at 5 minutes)
+                interval = exponential_backoff_with_jitter(
+                    self.failure_count - 1,
+                    base_delay=HUB_HEARTBEAT_INTERVAL,
+                    max_delay=min(HUB_HEARTBEAT_INTERVAL * 10, 300.0),
+                    jitter_factor=0.2,
+                )
+            else:
+                # Normal interval when healthy
+                interval = HUB_HEARTBEAT_INTERVAL
+
             # Use wait() instead of sleep() so shutdown is responsive
-            if self.shutdown_event.wait(timeout=HUB_HEARTBEAT_INTERVAL):
+            if self.shutdown_event.wait(timeout=interval):
                 break  # Shutdown requested
 
             try:
