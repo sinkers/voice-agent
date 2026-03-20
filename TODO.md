@@ -5,11 +5,11 @@ Last Updated: 2026-03-20 (Mypy + Refactoring Complete)
 
 ## 📊 PROGRESS SUMMARY
 
-**Completed:** 20/30 issues (67%)
+**Completed:** 21/30 issues (70%)
 **Critical Issues:** 4/4 fixed ✅ (100%)
 **Major Issues:** 3/4 fixed ✅ (75%)
 **Moderate Issues:** 5/5 fixed ✅ (100%)
-**Code Quality:** 8/11 fixed (73%)
+**Code Quality:** 9/11 fixed (82%)
 
 ### Latest Session Improvements
 - ✅ CI configuration fixed (skip integration/smoke tests)
@@ -55,8 +55,13 @@ Last Updated: 2026-03-20 (Mypy + Refactoring Complete)
   - FIXED: Type hints for all hub functions and HeartbeatThread
   - Better IDE support and type checking
 
-- [ ] 17. No Rate Limiting on Hub Requests
-  - Implement exponential backoff/jitter for hub polling and transient failures.
+- [x] 17. No Rate Limiting on Hub Requests ✅
+  - FIXED: Implemented exponential backoff with jitter for hub requests
+  - Device auth polling now uses exponential backoff (starts at 3s, increases to 15s max)
+  - Hub API requests (_hub_get_config, _hub_register) retry on connection errors and 5xx errors (3 attempts)
+  - Heartbeat thread uses exponential backoff on failures (up to 5 minutes max)
+  - Added comprehensive test suite (9 tests) for retry logic
+  - Prevents thundering herd problems and makes agent resilient to transient hub issues
 
 - [ ] 20. Frontend Error UX (`web/frontend/src/api.ts`)
   - Surface server `detail` messages when throwing on non-200 responses.
@@ -68,18 +73,11 @@ Last Updated: 2026-03-20 (Mypy + Refactoring Complete)
   - Consider moving to `__main__` to avoid surprising env overrides; tests currently patch this.
 
 - [x] 23. Add Comprehensive Linting to CI ✅
-<<<<<<< HEAD
   - FIXED: Added mypy type checking to CI and Makefile (PR #19)
   - ruff (linting + formatting) was already in place
   - mypy now runs on every commit and PR
   - Fixed type annotations and added type ignores for library issues
   - All 69 tests passing with mypy checks
-=======
-  - FIXED: ruff (linting + formatting) already in place
-  - FIXED: mypy type checking added (PR #19 pending)
-  - Runs on every commit and PR
-  - Enforces consistent code style across codebase
->>>>>>> a750a57 (docs: update TODO - mark items 23, 24, 30 as complete (20/30 done))
 
 - [x] 24. Add Security Scanner to CI ✅
   - FIXED: bandit security scanner in Makefile and CI (commit 4031442)
