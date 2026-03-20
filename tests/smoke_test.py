@@ -140,6 +140,7 @@ def _mp3_to_pcm48k(mp3_bytes: bytes) -> bytes:
     container = av.open(buf)
     resampler = av.AudioResampler(format="s16", layout="mono", rate=AUDIO_SAMPLE_RATE)
     chunks = []
+    # mypy: av.open() returns InputContainer | OutputContainer union; decode() is only on InputContainer
     for frame in container.decode(audio=0):  # type: ignore[union-attr]
         for rf in resampler.resample(frame):
             chunks.append(bytes(rf.planes[0]))
