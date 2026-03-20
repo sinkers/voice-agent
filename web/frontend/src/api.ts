@@ -17,7 +17,10 @@ export interface DispatchResponse {
 
 export async function fetchAgents(): Promise<Agent[]> {
   const res = await fetch(`${API_URL}/agents`);
-  if (!res.ok) throw new Error("Failed to fetch agents");
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to fetch agents" }));
+    throw new Error(error.detail || `Failed to fetch agents (${res.status})`);
+  }
   return res.json();
 }
 
@@ -31,7 +34,10 @@ export async function fetchToken(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ room_name: roomName, identity, agent_id: agentId }),
   });
-  if (!res.ok) throw new Error("Failed to fetch token");
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to fetch token" }));
+    throw new Error(error.detail || `Failed to fetch token (${res.status})`);
+  }
   return res.json();
 }
 
@@ -44,7 +50,10 @@ export async function dispatchAgent(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ room_name: roomName, agent_name: agentName }),
   });
-  if (!res.ok) throw new Error("Failed to dispatch agent");
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to dispatch agent" }));
+    throw new Error(error.detail || `Failed to dispatch agent (${res.status})`);
+  }
   return res.json();
 }
 
@@ -61,6 +70,9 @@ export async function connectWithToken(configToken: string): Promise<ConnectResp
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ config_token: configToken }),
   });
-  if (!res.ok) throw new Error("Invalid or expired call link");
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Invalid or expired call link" }));
+    throw new Error(error.detail || `Invalid or expired call link (${res.status})`);
+  }
   return res.json();
 }
