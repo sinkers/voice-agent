@@ -72,11 +72,11 @@ describe("connectWithToken", () => {
     expect(result.room_name).toBe("room-abc123");
   });
 
-  it("throws on a 401 response", async () => {
+  it("throws on a 401 response with server detail", async () => {
     mockFetch(401, { detail: "Config token has expired" });
 
     await expect(connectWithToken("expired-token")).rejects.toThrow(
-      "Invalid or expired call link"
+      "Config token has expired"
     );
   });
 
