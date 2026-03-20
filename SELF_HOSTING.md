@@ -79,13 +79,18 @@ Create a `.env` file in the hub backend:
 
 ```bash
 # Required: Encryption key for storing agent API keys in database
-HUB_ENCRYPTION_KEY=your_fernet_key  # Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+HUB_ENCRYPTION_KEY=your_fernet_key  # Generate with: python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 
 # Required: JWT secret for signing session tokens
 HUB_SECRET=your_random_secret_here  # Generate with: openssl rand -hex 32
 
 # Required: Base URL where hub is deployed
 BASE_URL=https://your-hub-name.fly.dev
+
+# Required: LiveKit credentials for the hub to manage agents
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_key
+LIVEKIT_API_SECRET=your_secret
 
 # Optional: Database URL (defaults to /data/hub.db)
 DATABASE_URL=sqlite+aiosqlite:////data/hub.db
@@ -117,6 +122,9 @@ fly launch --name your-hub-name --region sjc
 fly secrets set HUB_SECRET=$(openssl rand -hex 32)
 fly secrets set HUB_ENCRYPTION_KEY=$(python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
 fly secrets set BASE_URL=https://your-hub-name.fly.dev
+fly secrets set LIVEKIT_URL=wss://your-project.livekit.cloud
+fly secrets set LIVEKIT_API_KEY=your_key
+fly secrets set LIVEKIT_API_SECRET=your_secret
 
 # Deploy
 fly deploy
@@ -179,14 +187,10 @@ app = "your-hub-frontend"
 primary_region = "sjc"
 
 [http_service]
-  internal_port = 8080
+  internal_port = 80
   force_https = true
   auto_start_machines = true
   auto_stop_machines = true
-
-[[statics]]
-  guest_path = "/app/dist"
-  url_prefix = "/"
 EOF
 
 # Create Dockerfile for static hosting
@@ -280,7 +284,7 @@ fly deploy
 
 # 2. Deploy frontend
 cd ../frontend
-echo "VITE_HUB_URL=https://mycompany-voice-hub.fly.dev" > .env
+echo "VITE_HUB_URL=https://mycompany-voice-hub.fly.dev" >> .env
 npm run build
 fly launch --name mycompany-voice-frontend
 fly deploy
@@ -309,7 +313,7 @@ When self-hosting:
 
 2. **HUB_ENCRYPTION_KEY** must be a Fernet key for encrypting stored API keys
    ```bash
-   python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+   python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
    ```
    **⚠️ Critical:** Backup this key securely. If lost, agent credentials in the database cannot be decrypted.
 
@@ -378,7 +382,7 @@ fly logs -a your-hub-name
 
 **Browser can't connect to call:**
 - Verify frontend `VITE_HUB_URL` points to your hub
-- Check CORS: `ALLOWED_ORIGINS` must include your frontend domain
+- Check CORS: `CORS_ORIGINS` must include your frontend domain
 - Ensure HTTPS (required for WebRTC)
 
 **Agent registration fails:**
