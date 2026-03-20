@@ -251,6 +251,8 @@ The agent:
 3. Prints a **Call URL** for testing
 4. Streams logs in real-time
 
+> **Self-hosting:** Want to run your own hub? See [SELF_HOSTING.md](./SELF_HOSTING.md) for deployment instructions.
+
 **Example output:**
 ```
 ================================================================================
