@@ -30,6 +30,9 @@ jobs:
       - name: Run ruff format check
         run: uv run ruff format --check agent.py tests/ skill/scripts/*.py web/backend/*.py
 
+      - name: Run mypy type checker
+        run: uv run mypy agent.py tests/ skill/scripts/ web/backend/
+
       - name: Run security scanner (bandit)
         run: |
           uv run bandit -r agent.py web/backend/*.py skill/scripts/*.py \
