@@ -19,6 +19,8 @@
   ```
 - **Tests must pass. No exceptions.** If a test fails, fix the code — don't skip or comment out the test
 - **If you break a test, that is a bug** — stop and fix it before continuing
+- run make lint before pushing any changes
+- never let code coverage decrease
 
 ### Background tasks & reminders
 - Any time you kick off a background task (deploy, test run, agent spawn), **immediately schedule a follow-up cron reminder** so it doesn't get lost if the session ends

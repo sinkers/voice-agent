@@ -70,6 +70,10 @@ def main() -> None:
             raise
 
     # Hub keys are authoritative — override any .env values (if hub returned config)
+    if _config is None:
+        # This should not be reachable given error handling above, but ensures type safety
+        raise RuntimeError("Hub configuration could not be loaded.")
+
     _key_map = {
         "livekit_url": "LIVEKIT_URL",
         "livekit_api_key": "LIVEKIT_API_KEY",
@@ -78,11 +82,11 @@ def main() -> None:
         "openai_api_key": "OPENAI_API_KEY",
     }
     for _cfg_key, _env_key in _key_map.items():
-        _val = _config.get(_cfg_key, "")  # type: ignore[union-attr]
+        _val = _config.get(_cfg_key, "")
         if _val:
             os.environ[_env_key] = str(_val)
 
-    _call_url_base = _hub_register(_hub_url, _hub_token, _agent_name, _display_name, _config, _base_name)  # type: ignore[arg-type]
+    _call_url_base = _hub_register(_hub_url, _hub_token, _agent_name, _display_name, _config, _base_name)
 
     # Print call URL prominently for easy testing
     print("\n" + "=" * 80)

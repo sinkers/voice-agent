@@ -331,6 +331,28 @@ Last Updated: 2026-03-20 (Mypy + Refactoring Complete)
   - Need smoke test using livekit-client SDK to simulate actual browser connection
   - Should use Room.connect() and publish LocalAudioTrack via WebRTC
 
+- [ ] 36. Add `make cover` Code Coverage Target (Both Repos)
+  - **voice-agent:**
+    - Add `pytest-cov` to dev dependencies if not already present.
+    - Add `cover` target to `Makefile`:
+      ```makefile
+      cover:
+          uv run pytest -m "not integration" --cov=. --cov-report=term-missing --cov-report=html
+          @echo "HTML report: htmlcov/index.html"
+      ```
+    - Sources to cover: `agent.py`, `web/backend/`, `skill/scripts/`
+    - Add to `AGENTS.md` Tests section: "Run `make cover` to check coverage — coverage must not decrease."
+  - **voice-agent-hub:**
+    - Add `pytest-cov` to dev dependencies if not already present (hub AGENTS.md already documents the raw command).
+    - Add `cover` target to `Makefile`:
+      ```makefile
+      cover:
+          uv run pytest tests/ --cov=backend --cov-report=term-missing --cov-report=html
+          @echo "HTML report: htmlcov/index.html"
+      ```
+    - Add `make cover` row to the Quick Reference table in `AGENTS.md`.
+    - Update the pre-commit checklist to include `make cover` (coverage must not decrease).
+
 - [ ] 35. Redesign `Call.tsx` — Phone Call UI
   - **Goal:** Replace the current minimal debug layout with a proper phone-call-style screen. Currently `AgentUI` is a centred badge + subtitle + 5 fixed bars; `MicrophoneSelector` is a fixed top-right dropdown; the mute button is buried inside LiveKit's `<ControlBar>`.
 

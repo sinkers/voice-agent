@@ -15,8 +15,9 @@ load_dotenv()
 
 # ruff: noqa: E402, F401 - load_dotenv() must run before imports, and all imports are intentional re-exports
 
-import httpx  # Re-exported for test compatibility
 import os  # Re-exported for test compatibility
+
+import httpx  # Re-exported for test compatibility
 
 # When this module is reloaded (e.g. in tests), also reload the voice_agent submodules
 # so that module-level initialization (_llm, _tts) runs again with updated env/patches

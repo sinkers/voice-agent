@@ -25,4 +25,5 @@ class HubConfig(TypedDict, total=False):
 class HubRegisterResponse(TypedDict):
     """Response from hub /agent/register endpoint."""
 
+    agent_id: str
     call_url_base: str
